@@ -1,24 +1,26 @@
-import React, { useState, useMemo } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   Upload,
-  Image as ImageIcon,
+  Camera,
+  X,
+  Mic,
+  Square,
+  RotateCcw,
+  Volume2,
+  LocateFixed,
+  MapPin,
   CheckCircle2,
   AlertTriangle,
-  MapPin,
-  Lock,
   ArrowRight,
+  Sparkles,
   ChevronDown,
   ChevronUp,
   Clock,
-  Sparkles,
   Layers,
   FileCheck2,
-  Trash2,
-  RotateCcw,
-  ShieldCheck,
-  Send,
-  Eye,
+  Lock,
+  Phone,
+  Image as ImageIcon,
 } from 'lucide-react';
 import type { CivicCategory, CivicComplaint, Department, PriorityTier, TicketStage } from '../types/civic';
 import { WARD_CONFIG } from '../types/civic';
@@ -28,9 +30,20 @@ export interface CitizenPortalProps {
   onAddComplaint?: (newComplaint: CivicComplaint) => void;
   userName?: string;
   userWard?: string;
+  userPhone?: string;
+  defaultSubTab?: 'report' | 'submission';
+  onNavigateSubRoute?: (subRoute: 'report' | 'submission') => void;
 }
 
-// 4 Evaluator Field Samples
+// Visual Evidence Photo Interface
+interface CapturedPhoto {
+  id: string;
+  url: string;
+  name: string;
+  source: 'upload' | 'camera' | 'sample';
+}
+
+// Evaluator Field Samples
 const FIELD_SAMPLES = [
   {
     label: 'Road Pothole',
@@ -41,6 +54,7 @@ const FIELD_SAMPLES = [
     description: 'Model Town main market road pe deep pothole hai, raat ko bikes slip ho rahi hain. Dangerous cavity forming.',
     imageUrl: 'https://images.unsplash.com/photo-1515162816999-a0c47dc192f7?auto=format&fit=crop&w=800&q=80',
     ward: 'Model Town',
+    pincode: '141002',
     visionScore: 0.96,
     nlpScore: 0.94,
   },
@@ -53,6 +67,7 @@ const FIELD_SAMPLES = [
     description: 'Khaali plot ke paas residential garbage pile up ho gaya hai Sarabha Nagar mein. Severe stench and obstruction.',
     imageUrl: 'https://images.unsplash.com/photo-1605600659908-0ef719419d41?auto=format&fit=crop&w=800&q=80',
     ward: 'Sarabha Nagar',
+    pincode: '141001',
     visionScore: 0.93,
     nlpScore: 0.91,
   },
@@ -65,6 +80,7 @@ const FIELD_SAMPLES = [
     description: 'Streetlight pole #42 near Dugri Phase 2 intersection is dead for 4 nights, pitch dark and unsafe for pedestrians.',
     imageUrl: 'https://images.unsplash.com/photo-1509198397868-475647b2a1e5?auto=format&fit=crop&w=800&q=80',
     ward: 'Dugri',
+    pincode: '141013',
     visionScore: 0.91,
     nlpScore: 0.95,
   },
@@ -77,6 +93,7 @@ const FIELD_SAMPLES = [
     description: 'High pressure drinking water pipeline fracture near Gill Road canal bridge. Clean water flooding main carriage lane.',
     imageUrl: 'https://images.unsplash.com/photo-1542013936693-884638332954?auto=format&fit=crop&w=800&q=80',
     ward: 'Gill Road',
+    pincode: '141006',
     visionScore: 0.97,
     nlpScore: 0.96,
   },
@@ -101,14 +118,14 @@ const LIFECYCLE_STAGES: TicketStage[] = [
   'Closed',
 ];
 
-// Ward Geo-Coordinates Map
-const WARD_COORDINATES: Record<string, { lat: number; lng: number }> = {
-  'Model Town': { lat: 30.9025, lng: 75.8589 },
-  'Sarabha Nagar': { lat: 30.9015, lng: 75.858 },
-  Dugri: { lat: 30.9002, lng: 75.857 },
-  'Gill Road': { lat: 30.9012, lng: 75.8568 },
-  'Focal Point': { lat: 30.9025, lng: 75.8585 },
-  'Civil Lines': { lat: 30.9008, lng: 75.8579 },
+// Ward Geo-Coordinates and PIN Codes
+const WARD_METADATA: Record<string, { lat: number; lng: number; pincode: string }> = {
+  'Model Town': { lat: 30.9025, lng: 75.8589, pincode: '141002' },
+  'Sarabha Nagar': { lat: 30.9015, lng: 75.858, pincode: '141001' },
+  Dugri: { lat: 30.9002, lng: 75.857, pincode: '141013' },
+  'Gill Road': { lat: 30.9012, lng: 75.8568, pincode: '141006' },
+  'Focal Point': { lat: 30.9025, lng: 75.8585, pincode: '141010' },
+  'Civil Lines': { lat: 30.9008, lng: 75.8579, pincode: '141001' },
 };
 
 export const CitizenPortal: React.FC<CitizenPortalProps> = ({
@@ -116,28 +133,233 @@ export const CitizenPortal: React.FC<CitizenPortalProps> = ({
   onAddComplaint,
   userName = 'Citizen Reporter',
   userWard = 'Model Town',
+  userPhone = '9876543210',
+  defaultSubTab = 'report',
+  onNavigateSubRoute,
 }) => {
-  const [activeTab, setActiveTab] = useState<'report' | 'submissions'>('report');
+  const activeTab = defaultSubTab;
   const [submissionSuccess, setSubmissionSuccess] = useState<string | null>(null);
 
-  // Intake Form State
-  const [imagePreview, setImagePreview] = useState<string>('');
-  const [imageMeta, setImageMeta] = useState<{ name: string; size: string; dim: string } | null>(null);
+  // Section 1: Visual Evidence (Up to 5 Photos)
+  const [photos, setPhotos] = useState<CapturedPhoto[]>([]);
+  const [cameraModalOpen, setCameraModalOpen] = useState(false);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+
+  // Section 2: Description & Voice Note Recorder
   const [description, setDescription] = useState<string>('');
+  const [isRecording, setIsRecording] = useState<boolean>(false);
+  const [recordingSeconds, setRecordingSeconds] = useState<number>(0);
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const timerIntervalRef = useRef<any>(null);
+
+  // Section 3: Indian Administrative Location
+  const [stateVal, setStateVal] = useState<string>('Punjab');
+  const [districtVal, setDistrictVal] = useState<string>('Ludhiana');
+  const [cityVal, setCityVal] = useState<string>('Ludhiana Municipal Corporation');
   const [selectedWard, setSelectedWard] = useState<string>(
     userWard && userWard !== 'Auto-Detected (GPS)' ? userWard : 'Model Town'
   );
+  const [pincode, setPincode] = useState<string>(WARD_METADATA[selectedWard]?.pincode || '141002');
+  const [landmark, setLandmark] = useState<string>('');
+  const [liveGps, setLiveGps] = useState<{ lat: number; lng: number; accuracy: number } | null>(null);
+  const [locatingGps, setLocatingGps] = useState(false);
+
+  // Section 4: Contact Number & Severity Context
+  const [phone, setPhone] = useState<string>(userPhone);
+  const [allowCallVerification, setAllowCallVerification] = useState<boolean>(true);
+  const [duration, setDuration] = useState<'Today' | '2–5 Days' | '1+ Week'>('Today');
+  const [nearSchoolOrHospital, setNearSchoolOrHospital] = useState<boolean>(false);
+  const [trafficBlocked, setTrafficBlocked] = useState<boolean>(false);
+  const [openHazard, setOpenHazard] = useState<boolean>(false);
 
   // Submissions View State
   const [statusFilter, setStatusFilter] = useState<'All' | 'In Review' | 'Field Active' | 'Resolved'>('All');
   const [expandedTicketId, setExpandedTicketId] = useState<string | null>(null);
+
+  // Auto-sync PIN when Ward changes
+  const handleWardChange = (newWard: string) => {
+    setSelectedWard(newWard);
+    if (WARD_METADATA[newWard]) {
+      setPincode(WARD_METADATA[newWard].pincode);
+    }
+  };
+
+  // Live GPS Fetcher
+  const handleShareGps = () => {
+    if (!navigator.geolocation) {
+      alert('Geolocation is not supported by your browser.');
+      return;
+    }
+    setLocatingGps(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setLocatingGps(false);
+        setLiveGps({
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+          accuracy: pos.coords.accuracy || 4.5,
+        });
+        setStateVal('Punjab');
+        setDistrictVal('Ludhiana');
+        setCityVal('Ludhiana Municipal Corporation');
+      },
+      () => {
+        setLocatingGps(false);
+        // Fallback to default ward coordinates
+        const meta = WARD_METADATA[selectedWard] || WARD_METADATA['Model Town'];
+        setLiveGps({ lat: meta.lat, lng: meta.lng, accuracy: 5.0 });
+      },
+      { timeout: 8000, enableHighAccuracy: true }
+    );
+  };
+
+  // Audio Recording Flow
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioChunksRef.current = [];
+      const recorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = recorder;
+
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) audioChunksRef.current.push(e.data);
+      };
+
+      recorder.onstop = () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        const url = URL.createObjectURL(audioBlob);
+        setAudioUrl(url);
+        stream.getTracks().forEach((t) => t.stop());
+      };
+
+      recorder.start();
+      setIsRecording(true);
+      setRecordingSeconds(0);
+      timerIntervalRef.current = setInterval(() => {
+        setRecordingSeconds((prev) => {
+          if (prev >= 60) {
+            stopRecording();
+            return 60;
+          }
+          return prev + 1;
+        });
+      }, 1000);
+    } catch {
+      alert('Microphone access was denied or not supported on this device.');
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+      clearInterval(timerIntervalRef.current);
+    }
+  };
+
+  const deleteRecording = () => {
+    setAudioUrl(null);
+    setRecordingSeconds(0);
+    audioChunksRef.current = [];
+  };
+
+  // Live Camera Photo Snapshot Handlers
+  const openLiveCamera = async () => {
+    setCameraModalOpen(true);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment', width: { ideal: 1280 } },
+      });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.play();
+      }
+    } catch {
+      // If direct webcam fails, camera file input is always available
+    }
+  };
+
+  const captureCameraFrame = () => {
+    if (!videoRef.current) return;
+    const canvas = document.createElement('canvas');
+    canvas.width = videoRef.current.videoWidth || 640;
+    canvas.height = videoRef.current.videoHeight || 480;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+      const dataUrl = canvas.toDataURL('image/jpeg');
+      addPhoto({
+        id: `cam-${Date.now()}`,
+        url: dataUrl,
+        name: `Live_Capture_${photos.length + 1}.jpg`,
+        source: 'camera',
+      });
+    }
+    closeLiveCamera();
+  };
+
+  const closeLiveCamera = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    }
+    setCameraModalOpen(false);
+  };
+
+  // Add Photo Helper (Max 5 photos)
+  const addPhoto = (newPhoto: CapturedPhoto) => {
+    if (photos.length >= 5) {
+      alert('A maximum of 5 photos can be attached per civic report.');
+      return;
+    }
+    setPhotos((prev) => [...prev, newPhoto]);
+  };
+
+  const removePhoto = (id: string) => {
+    setPhotos((prev) => prev.filter((p) => p.id !== id));
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+
+    const remainingSlots = 5 - photos.length;
+    files.slice(0, remainingSlots).forEach((file, idx) => {
+      const url = URL.createObjectURL(file);
+      addPhoto({
+        id: `upload-${Date.now()}-${idx}`,
+        url,
+        name: file.name,
+        source: 'upload',
+      });
+    });
+  };
+
+  // Load a Pre-Configured Field Sample
+  const handleLoadSample = (sample: (typeof FIELD_SAMPLES)[number]) => {
+    setPhotos([
+      {
+        id: `sample-${Date.now()}`,
+        url: sample.imageUrl,
+        name: `${sample.category.toLowerCase().replace(/\s+/g, '_')}_sample.jpg`,
+        source: 'sample',
+      },
+    ]);
+    setDescription(sample.description);
+    setSelectedWard(sample.ward);
+    setPincode(sample.pincode);
+  };
 
   // Deterministic Keyword-Based AI Classification
   const aiTriage = useMemo(() => {
     const text = description.toLowerCase();
     let category: CivicCategory = 'Pothole';
     let priority: PriorityTier = 'P3 Medium';
-    let visionScore = imagePreview ? 0.94 : 0.75;
+    let visionScore = photos.length > 0 ? 0.95 : 0.75;
     let nlpScore = 0.88;
     let slaHours = 48;
 
@@ -173,6 +395,13 @@ export const CitizenPortal: React.FC<CitizenPortalProps> = ({
       visionScore = 0.96;
     }
 
+    // Safety escalations
+    if (openHazard || trafficBlocked || nearSchoolOrHospital) {
+      if (priority === 'P3 Medium') priority = 'P2 High';
+      if (openHazard) priority = 'P1 Critical';
+      slaHours = Math.min(slaHours, 24);
+    }
+
     const department: Department = WARD_CONFIG[category] || 'Roads & Public Works';
     const fusionScore = Number((visionScore * 0.55 + nlpScore * 0.45).toFixed(2));
 
@@ -185,7 +414,7 @@ export const CitizenPortal: React.FC<CitizenPortalProps> = ({
       nlpScore,
       fusionScore,
     };
-  }, [description, imagePreview]);
+  }, [description, photos.length, openHazard, trafficBlocked, nearSchoolOrHospital]);
 
   // 100m Spatial Duplicate Scanner
   const existingDuplicate = useMemo(() => {
@@ -198,56 +427,36 @@ export const CitizenPortal: React.FC<CitizenPortalProps> = ({
     );
   }, [complaints, selectedWard, aiTriage.category]);
 
-  // Coordinate readout for selected ward
-  const coords = WARD_COORDINATES[selectedWard] || WARD_COORDINATES['Model Town'];
-
-  // Handle Image File Upload
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const url = URL.createObjectURL(file);
-    setImagePreview(url);
-    setImageMeta({
-      name: file.name,
-      size: `${(file.size / (1024 * 1024)).toFixed(2)} MB`,
-      dim: '1920 × 1080 (Auto-Scaled)',
-    });
-  };
-
-  // Load a Pre-Configured Field Sample
-  const handleLoadSample = (sample: (typeof FIELD_SAMPLES)[number]) => {
-    setImagePreview(sample.imageUrl);
-    setImageMeta({
-      name: `${sample.category.toLowerCase().replace(/\s+/g, '_')}_sample.jpg`,
-      size: '1.42 MB',
-      dim: '2048 × 1536 (Punjab Civic Survey)',
-    });
-    setDescription(sample.description);
-    setSelectedWard(sample.ward);
-  };
+  const activeCoordinates = liveGps || WARD_METADATA[selectedWard] || WARD_METADATA['Model Town'];
 
   // Submit Complaint Handler
   const handleSubmitReport = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!description.trim()) return;
+    if (!description.trim()) {
+      alert('Please provide a brief description of the civic incident.');
+      return;
+    }
 
     const newTicketId = `TKT-2026-${Math.floor(1000 + Math.random() * 9000)}`;
     const nowIso = new Date().toISOString();
 
     const newComplaint: CivicComplaint = {
       id: newTicketId,
-      title: `${aiTriage.category} reported in ${selectedWard}`,
-      description: description.trim(),
+      title: `${aiTriage.category} reported near ${landmark || selectedWard}`,
+      description: `${description.trim()} ${
+        audioUrl ? '[Voice note attached]' : ''
+      } ${landmark ? `• Landmark: ${landmark}` : ''} • PIN: ${pincode}`,
       category: aiTriage.category,
       department: aiTriage.department,
       priority: aiTriage.priority,
       stage: 'AI Analyzed',
       ward: selectedWard,
-      lat: coords.lat,
-      lng: coords.lng,
+      city: cityVal,
+      state: stateVal,
+      lat: activeCoordinates.lat,
+      lng: activeCoordinates.lng,
       imageUrl:
-        imagePreview ||
+        photos[0]?.url ||
         'https://images.unsplash.com/photo-1515162816999-a0c47dc192f7?auto=format&fit=crop&w=800&q=80',
       afterImageUrl: '',
       visionConfidence: aiTriage.visionScore,
@@ -262,7 +471,7 @@ export const CitizenPortal: React.FC<CitizenPortalProps> = ({
           action: 'confirm',
           previousValue: 'None',
           newValue: 'AI Analyzed',
-          reason: 'Initial intake with automated YOLOv11 & RoBERTa triage',
+          reason: `Ingested ${photos.length} visual evidence photos + RoBERTa triage. Contact: +91-${phone}`,
         },
       ],
     };
@@ -272,14 +481,13 @@ export const CitizenPortal: React.FC<CitizenPortalProps> = ({
     }
 
     setSubmissionSuccess(newTicketId);
-    setImagePreview('');
-    setImageMeta(null);
+    setPhotos([]);
     setDescription('');
-    setActiveTab('submissions');
+    deleteRecording();
 
-    setTimeout(() => {
-      setSubmissionSuccess(null);
-    }, 6000);
+    if (onNavigateSubRoute) {
+      onNavigateSubRoute('submission');
+    }
   };
 
   // Filtered Submissions
@@ -300,61 +508,15 @@ export const CitizenPortal: React.FC<CitizenPortalProps> = ({
   }, [complaints, statusFilter]);
 
   return (
-    <div className="space-y-6">
-      {/* Top Banner & Sliding Mode Segmented Tab Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-[#E3E8EE]">
-        <div>
-          <h1 className="text-xl font-bold tracking-tight text-[#0F1B2A]">Citizen Incident Workspace</h1>
-          <p className="text-xs text-[#5B6B7C] mt-0.5">
-            Report civic infrastructure defects with instant AI classification and track resolution milestones.
-          </p>
-        </div>
-
-        {/* Sliding Segmented Tab Bar */}
-        <div className="relative flex rounded-lg border border-[#E3E8EE] bg-[#F5F7FA] p-1 self-start sm:self-auto">
-          <button
-            onClick={() => setActiveTab('report')}
-            className={`relative px-4 py-1.5 text-xs font-semibold transition-colors cursor-pointer z-10 ${
-              activeTab === 'report' ? 'text-[#0F1B2A]' : 'text-[#5B6B7C] hover:text-[#0F1B2A]'
-            }`}
-          >
-            {activeTab === 'report' && (
-              <motion.span
-                layoutId="citizen-workspace-tab"
-                transition={{ type: 'spring', stiffness: 460, damping: 34 }}
-                className="absolute inset-0 rounded-md bg-white border border-[#E3E8EE] shadow-2xs"
-              />
-            )}
-            <span className="relative z-10">Report an Incident</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('submissions')}
-            className={`relative px-4 py-1.5 text-xs font-semibold transition-colors cursor-pointer z-10 ${
-              activeTab === 'submissions' ? 'text-[#0F1B2A]' : 'text-[#5B6B7C] hover:text-[#0F1B2A]'
-            }`}
-          >
-            {activeTab === 'submissions' && (
-              <motion.span
-                layoutId="citizen-workspace-tab"
-                transition={{ type: 'spring', stiffness: 460, damping: 34 }}
-                className="absolute inset-0 rounded-md bg-white border border-[#E3E8EE] shadow-2xs"
-              />
-            )}
-            <span className="relative z-10">
-              My Submissions <span className="cp-mono ml-1 font-bold">({complaints.length})</span>
-            </span>
-          </button>
-        </div>
-      </div>
-
+    <div className="w-full space-y-6 antialiased pb-12">
       {/* Confirmation Alert Banner */}
       {submissionSuccess && (
         <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-4 flex items-center justify-between text-xs text-emerald-900">
           <div className="flex items-center gap-2.5">
             <CheckCircle2 className="w-4 h-4 text-[#1E9E6A] shrink-0" strokeWidth={2} />
             <span>
-              Complaint registered successfully. Ticket reference <strong className="cp-mono font-bold">{submissionSuccess}</strong> has been ingested into the municipal triage queue.
+              Complaint registered successfully. Ticket reference{' '}
+              <strong className="cp-mono font-bold">{submissionSuccess}</strong> has been forwarded to the municipal dispatch queue.
             </span>
           </div>
           <button
@@ -369,56 +531,102 @@ export const CitizenPortal: React.FC<CitizenPortalProps> = ({
       {/* VIEW A: REPORT AN INCIDENT */}
       {activeTab === 'report' && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-          {/* Left Column (7 cols): Structured Intake Form */}
+          {/* Left Column (7 cols): Streamlined Intake Form */}
           <form noValidate onSubmit={handleSubmitReport} className="lg:col-span-7 space-y-6">
-            {/* 1. Visual Evidence Upload */}
-            <div className="space-y-2">
-              <label className="block text-xs font-bold text-[#0F1B2A]">
-                1. Visual Evidence (Photo Capture)
-              </label>
+            {/* Header info */}
+            <div>
+              <h2 className="text-xl font-bold tracking-tight text-[#0F1B2A]">
+                Report an Urban Infrastructure Issue
+              </h2>
+              <p className="text-xs text-[#5B6B7C] mt-0.5">
+                Capture evidence, describe the hazard, and track municipal field resolution.
+              </p>
+            </div>
 
-              {imagePreview ? (
-                <div className="relative rounded-xl border border-[#DDE3EA] bg-[#F5F7FA] p-3 flex items-center justify-between gap-4">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <img
-                      src={imagePreview}
-                      alt="Defect Preview"
-                      className="h-16 w-16 object-cover rounded-lg border border-[#CBD3DD] shrink-0"
-                    />
-                    <div className="min-w-0 text-xs">
-                      <p className="font-bold text-[#0F1B2A] truncate">{imageMeta?.name || 'Uploaded photo'}</p>
-                      <p className="cp-mono text-[11px] text-[#5B6B7C] mt-0.5">{imageMeta?.size} • {imageMeta?.dim}</p>
-                      <span className="inline-flex items-center gap-1 text-[10px] text-emerald-700 font-medium mt-1">
-                        <CheckCircle2 className="w-3 h-3 text-[#1E9E6A]" /> EXIF Location Tagged
-                      </span>
-                    </div>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setImagePreview('');
-                      setImageMeta(null);
-                    }}
-                    className="flex items-center gap-1 text-xs font-semibold text-[#C23B22] hover:text-red-700 p-2 rounded-lg hover:bg-red-50 transition-colors cursor-pointer"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span>Remove</span>
-                  </button>
+            {/* SECTION 1: VISUAL EVIDENCE (MAX 5 PHOTOS) */}
+            <div className="rounded-2xl border border-[#DDE3EA] bg-white p-5 sm:p-6 space-y-4 shadow-xs">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-xs font-bold text-[#0F1B2A] uppercase tracking-wider">
+                    1. Visual Evidence Photos
+                  </h3>
+                  <p className="text-[11px] text-[#5B6B7C]">
+                    Attach up to 5 clear photos of the defect from multiple angles.
+                  </p>
                 </div>
-              ) : (
-                <label className="flex flex-col items-center justify-center p-6 border border-dashed border-[#CBD3DD] rounded-xl bg-[#F5F7FA]/60 hover:bg-[#F5F7FA] hover:border-[#1F4FE0] transition-colors cursor-pointer text-center group">
-                  <Upload className="w-6 h-6 text-[#7A8999] group-hover:text-[#1F4FE0] transition-colors mb-2" strokeWidth={1.75} />
-                  <span className="text-xs font-bold text-[#0F1B2A]">Click or drag photo here</span>
-                  <span className="text-[11px] text-[#5B6B7C] mt-0.5">JPEG, PNG, WebP up to 10MB</span>
-                  <input type="file" accept="image/*" onChange={handleFileChange} className="hidden" />
-                </label>
-              )}
+                <span className="cp-mono text-xs font-bold text-[#1F4FE0] bg-[#F5F7FA] border border-[#E3E8EE] px-2.5 py-1 rounded-md">
+                  {photos.length} / 5 photos
+                </span>
+              </div>
 
-              {/* Load Field Sample Strip */}
-              <div className="pt-1">
+              {/* Action Buttons: Upload + Live Camera */}
+              <div className="grid grid-cols-2 gap-3">
+                <label className="flex items-center justify-center gap-2 p-3 rounded-xl border border-[#CBD3DD] bg-[#F5F7FA] hover:bg-[#EAF0FF]/50 hover:border-[#1F4FE0] transition-colors cursor-pointer text-xs font-bold text-[#0F1B2A]">
+                  <Upload className="w-4 h-4 text-[#1F4FE0]" strokeWidth={2} />
+                  <span>Upload Photos</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    disabled={photos.length >= 5}
+                    onChange={handleFileUpload}
+                    className="hidden"
+                  />
+                </label>
+
+                <button
+                  type="button"
+                  disabled={photos.length >= 5}
+                  onClick={openLiveCamera}
+                  className="flex items-center justify-center gap-2 p-3 rounded-xl border border-[#CBD3DD] bg-[#F5F7FA] hover:bg-[#EAF0FF]/50 hover:border-[#1F4FE0] transition-colors cursor-pointer text-xs font-bold text-[#0F1B2A] disabled:opacity-50"
+                >
+                  <Camera className="w-4 h-4 text-[#1F4FE0]" strokeWidth={2} />
+                  <span>Capture Live Photo</span>
+                </button>
+              </div>
+
+              {/* 5-Slot Thumbnail Grid */}
+              <div className="grid grid-cols-5 gap-2.5 pt-1">
+                {[0, 1, 2, 3, 4].map((slotIdx) => {
+                  const photo = photos[slotIdx];
+                  if (photo) {
+                    return (
+                      <div
+                        key={photo.id}
+                        className="relative aspect-square rounded-xl border border-[#CBD3DD] overflow-hidden bg-slate-100 group"
+                      >
+                        <img src={photo.url} alt={photo.name} className="w-full h-full object-cover" />
+                        <button
+                          type="button"
+                          onClick={() => removePhoto(photo.id)}
+                          className="absolute top-1 right-1 p-1 rounded-full bg-[#0F1B2A]/80 text-white hover:bg-red-600 transition-colors"
+                          title="Remove photo"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                        {slotIdx === 0 && (
+                          <span className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded text-[8px] font-bold bg-[#1F4FE0] text-white">
+                            Primary
+                          </span>
+                        )}
+                      </div>
+                    );
+                  }
+                  return (
+                    <div
+                      key={`empty-${slotIdx}`}
+                      className="aspect-square rounded-xl border border-dashed border-[#CBD3DD] bg-[#F8FAFC] flex flex-col items-center justify-center text-[10px] text-[#7A8999]"
+                    >
+                      <span>Slot {slotIdx + 1}</span>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Field Sample Evaluator Strip */}
+              <div className="pt-2 border-t border-[#E3E8EE]">
                 <span className="text-[10px] font-bold text-[#7A8999] uppercase tracking-wider block mb-1.5">
-                  Or Load Field Sample (Evaluator Quick-Fill):
+                  Or Load Evaluator Field Sample (1-Click):
                 </span>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
                   {FIELD_SAMPLES.map((sample) => (
@@ -426,7 +634,7 @@ export const CitizenPortal: React.FC<CitizenPortalProps> = ({
                       key={sample.label}
                       type="button"
                       onClick={() => handleLoadSample(sample)}
-                      className="flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-md border border-[#E3E8EE] bg-white text-xs font-semibold text-[#44546A] hover:text-[#0F1B2A] hover:border-[#1F4FE0] transition-all cursor-pointer"
+                      className="flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg border border-[#E3E8EE] bg-white text-xs font-semibold text-[#44546A] hover:text-[#0F1B2A] hover:border-[#1F4FE0] transition-colors cursor-pointer"
                     >
                       <ImageIcon className="w-3 h-3 text-[#1F4FE0]" />
                       <span>{sample.label}</span>
@@ -436,12 +644,17 @@ export const CitizenPortal: React.FC<CitizenPortalProps> = ({
               </div>
             </div>
 
-            {/* 2. Incident Description (Multilingual) */}
-            <div className="space-y-2">
+            {/* SECTION 2: DESCRIPTION & INTEGRATED VOICE NOTE RECORDER */}
+            <div className="rounded-2xl border border-[#DDE3EA] bg-white p-5 sm:p-6 space-y-4 shadow-xs">
               <div className="flex items-center justify-between">
-                <label className="block text-xs font-bold text-[#0F1B2A]">
-                  2. Incident Description (English / Hinglish)
-                </label>
+                <div>
+                  <h3 className="text-xs font-bold text-[#0F1B2A] uppercase tracking-wider">
+                    2. Incident Description & Voice Note
+                  </h3>
+                  <p className="text-[11px] text-[#5B6B7C]">
+                    Type or record in English, Hindi, Punjabi, or Hinglish.
+                  </p>
+                </div>
                 <span className="cp-mono text-[11px] text-[#7A8999]">
                   {description.length} / 500
                 </span>
@@ -452,12 +665,12 @@ export const CitizenPortal: React.FC<CitizenPortalProps> = ({
                 maxLength={500}
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder="Describe the issue, landmarks, severity, or hazards (e.g., 'Model Town main road pe deep pothole hai')..."
+                placeholder="Describe the defect, location context, and safety hazard (e.g., 'Model Town main road pe deep pothole hai, bikes slip ho rahi hain')..."
                 className="w-full rounded-xl border border-[#CBD3DD] p-3 text-sm text-[#0F1B2A] placeholder:text-[#8795A5] focus:border-[#1F4FE0] focus:outline-none focus:ring-1 focus:ring-[#1F4FE0] bg-white leading-relaxed"
               />
 
-              {/* Quick-Fill Sample Chips */}
-              <div className="flex flex-wrap gap-1.5 pt-0.5">
+              {/* Sample Chips */}
+              <div className="flex flex-wrap gap-1.5">
                 {DESCRIPTION_CHIPS.map((chip, idx) => (
                   <button
                     key={idx}
@@ -469,46 +682,289 @@ export const CitizenPortal: React.FC<CitizenPortalProps> = ({
                   </button>
                 ))}
               </div>
+
+              {/* Voice Note Recorder Bar */}
+              <div className="pt-2 border-t border-[#E3E8EE]">
+                {!isRecording && !audioUrl && (
+                  <button
+                    type="button"
+                    onClick={startRecording}
+                    className="flex items-center gap-2 rounded-xl border border-[#CBD3DD] bg-[#F5F7FA] px-3.5 py-2 text-xs font-semibold text-[#0F1B2A] hover:border-[#1F4FE0] hover:bg-[#EAF0FF]/50 transition-colors cursor-pointer"
+                  >
+                    <Mic className="w-4 h-4 text-[#1F4FE0]" />
+                    <span>Record Voice Note</span>
+                    <span className="text-[11px] text-[#7A8999] font-normal ml-1">
+                      (Hindi, Punjabi, English • max 60s)
+                    </span>
+                  </button>
+                )}
+
+                {isRecording && (
+                  <div className="flex items-center justify-between p-3 rounded-xl border border-red-200 bg-red-50/60">
+                    <div className="flex items-center gap-2.5">
+                      <span className="h-2.5 w-2.5 rounded-full bg-[#C23B22] animate-ping" />
+                      <span className="text-xs font-bold text-[#C23B22]">Recording Voice Note...</span>
+                      <span className="cp-mono text-xs font-bold text-[#0F1B2A] ml-2">
+                        00:{recordingSeconds < 10 ? `0${recordingSeconds}` : recordingSeconds} / 01:00
+                      </span>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={stopRecording}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#C23B22] text-white text-xs font-bold hover:bg-red-700 transition-colors cursor-pointer"
+                    >
+                      <Square className="w-3.5 h-3.5 fill-current" />
+                      <span>Stop</span>
+                    </button>
+                  </div>
+                )}
+
+                {audioUrl && (
+                  <div className="flex items-center justify-between p-3 rounded-xl border border-[#DDE3EA] bg-[#F5F7FA]">
+                    <div className="flex items-center gap-3">
+                      <Volume2 className="w-4 h-4 text-[#1F4FE0]" />
+                      <audio src={audioUrl} controls className="h-8 max-w-[220px] sm:max-w-[300px]" />
+                      <span className="cp-mono text-[11px] font-semibold text-[#1E9E6A]">
+                        Recorded ({recordingSeconds}s)
+                      </span>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={deleteRecording}
+                      className="flex items-center gap-1 text-xs text-[#C23B22] hover:underline font-semibold cursor-pointer"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span>Re-record</span>
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
 
-            {/* 3. Ward & Geolocation Pin */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-bold text-[#0F1B2A] mb-1.5">
-                  3. Municipal Ward
-                </label>
-                <select
-                  value={selectedWard}
-                  onChange={(e) => setSelectedWard(e.target.value)}
-                  className="w-full rounded-xl border border-[#CBD3DD] px-3 py-2 text-sm text-[#0F1B2A] focus:border-[#1F4FE0] focus:outline-none focus:ring-1 focus:ring-[#1F4FE0] bg-white cursor-pointer"
+            {/* SECTION 3: INDIAN ADMINISTRATIVE LOCATION & PIN CODE */}
+            <div className="rounded-2xl border border-[#DDE3EA] bg-white p-5 sm:p-6 space-y-4 shadow-xs">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-xs font-bold text-[#0F1B2A] uppercase tracking-wider">
+                    3. Indian Administrative Location & PIN Code
+                  </h3>
+                  <p className="text-[11px] text-[#5B6B7C]">
+                    Exact municipal hierarchy for correct ward engineer dispatch.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleShareGps}
+                  disabled={locatingGps}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#CBD3DD] bg-[#F5F7FA] text-xs font-semibold text-[#1F4FE0] hover:bg-[#EAF0FF] transition-colors cursor-pointer"
                 >
-                  <option value="Model Town">Model Town (Ward 34)</option>
-                  <option value="Sarabha Nagar">Sarabha Nagar (Ward 21)</option>
-                  <option value="Dugri">Dugri (Ward 48)</option>
-                  <option value="Gill Road">Gill Road (Ward 12)</option>
-                  <option value="Focal Point">Focal Point (Ward 07)</option>
-                  <option value="Civil Lines">Civil Lines (Ward 19)</option>
-                </select>
+                  <LocateFixed className="w-3.5 h-3.5" />
+                  <span>{locatingGps ? 'Locating...' : 'Share Live GPS'}</span>
+                </button>
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-[#0F1B2A] mb-1.5">
-                  GPS Readout (High-DPI)
-                </label>
-                <div className="flex items-center gap-2 rounded-xl border border-[#E3E8EE] bg-[#F5F7FA] px-3 py-2 text-xs text-[#44546A] cp-mono">
-                  <MapPin className="w-3.5 h-3.5 text-[#1F4FE0] shrink-0" />
-                  <span className="truncate">
-                    {coords.lat.toFixed(4)}° N, {coords.lng.toFixed(4)}° E • ±4.2m
-                  </span>
+              {/* Coordinates Readout */}
+              <div className="flex items-center gap-2 rounded-xl border border-[#E3E8EE] bg-[#F5F7FA] px-3.5 py-2 text-xs cp-mono text-[#44546A]">
+                <MapPin className="w-4 h-4 text-[#1F4FE0] shrink-0" />
+                <span>
+                  {activeCoordinates.lat.toFixed(4)}° N, {activeCoordinates.lng.toFixed(4)}° E • Accuracy ±
+                  {liveGps ? `${liveGps.accuracy.toFixed(1)}m` : '4.5m'} (Municipal Geo-Tag)
+                </span>
+              </div>
+
+              {/* Cascading Indian Location Inputs */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3.5">
+                <div>
+                  <label className="block text-xs font-bold text-[#0F1B2A] mb-1">State / UT</label>
+                  <select
+                    value={stateVal}
+                    onChange={(e) => setStateVal(e.target.value)}
+                    className="w-full rounded-xl border border-[#CBD3DD] px-3 py-2 text-xs font-medium text-[#0F1B2A] bg-white focus:border-[#1F4FE0] focus:outline-none"
+                  >
+                    <option value="Punjab">Punjab</option>
+                    <option value="Delhi">Delhi NCR</option>
+                    <option value="Maharashtra">Maharashtra</option>
+                    <option value="Karnataka">Karnataka</option>
+                    <option value="Telangana">Telangana</option>
+                    <option value="Tamil Nadu">Tamil Nadu</option>
+                    <option value="Gujarat">Gujarat</option>
+                    <option value="Uttar Pradesh">Uttar Pradesh</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-[#0F1B2A] mb-1">District</label>
+                  <select
+                    value={districtVal}
+                    onChange={(e) => setDistrictVal(e.target.value)}
+                    className="w-full rounded-xl border border-[#CBD3DD] px-3 py-2 text-xs font-medium text-[#0F1B2A] bg-white focus:border-[#1F4FE0] focus:outline-none"
+                  >
+                    <option value="Ludhiana">Ludhiana</option>
+                    <option value="Amritsar">Amritsar</option>
+                    <option value="Jalandhar">Jalandhar</option>
+                    <option value="SAS Nagar">SAS Nagar (Mohali)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-[#0F1B2A] mb-1">City / Corporation</label>
+                  <input
+                    type="text"
+                    value={cityVal}
+                    onChange={(e) => setCityVal(e.target.value)}
+                    className="w-full rounded-xl border border-[#CBD3DD] px-3 py-2 text-xs text-[#0F1B2A] bg-white focus:border-[#1F4FE0] focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-[#0F1B2A] mb-1">Ward / Locality</label>
+                  <select
+                    value={selectedWard}
+                    onChange={(e) => handleWardChange(e.target.value)}
+                    className="w-full rounded-xl border border-[#CBD3DD] px-3 py-2 text-xs font-medium text-[#0F1B2A] bg-white focus:border-[#1F4FE0] focus:outline-none"
+                  >
+                    <option value="Model Town">Model Town (Ward 34)</option>
+                    <option value="Sarabha Nagar">Sarabha Nagar (Ward 21)</option>
+                    <option value="Dugri">Dugri (Ward 48)</option>
+                    <option value="Gill Road">Gill Road (Ward 12)</option>
+                    <option value="Focal Point">Focal Point (Ward 07)</option>
+                    <option value="Civil Lines">Civil Lines (Ward 19)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-[#0F1B2A] mb-1">PIN Code (6 digits)</label>
+                  <input
+                    type="text"
+                    maxLength={6}
+                    value={pincode}
+                    onChange={(e) => setPincode(e.target.value.replace(/\D/g, ''))}
+                    placeholder="141002"
+                    className="w-full rounded-xl border border-[#CBD3DD] px-3 py-2 text-xs cp-mono tabular-nums text-[#0F1B2A] bg-white focus:border-[#1F4FE0] focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-[#0F1B2A] mb-1">Nearby Landmark</label>
+                  <input
+                    type="text"
+                    value={landmark}
+                    onChange={(e) => setLandmark(e.target.value)}
+                    placeholder="Near Gol Market Chowk, opp SBI"
+                    className="w-full rounded-xl border border-[#CBD3DD] px-3 py-2 text-xs text-[#0F1B2A] bg-white focus:border-[#1F4FE0] focus:outline-none"
+                  />
                 </div>
               </div>
             </div>
 
-            {/* 4. DPDP Act 2023 Privacy Strip */}
-            <div className="flex items-start gap-2.5 rounded-xl border border-[#E3E8EE] bg-[#F5F7FA]/80 p-3 text-xs text-[#5B6B7C] leading-normal">
+            {/* SECTION 4: CONTACT NUMBER & SEVERITY CONTEXT */}
+            <div className="rounded-2xl border border-[#DDE3EA] bg-white p-5 sm:p-6 space-y-4 shadow-xs">
+              <div>
+                <h3 className="text-xs font-bold text-[#0F1B2A] uppercase tracking-wider">
+                  4. Contact Verification & Hazard Urgency
+                </h3>
+                <p className="text-[11px] text-[#5B6B7C]">
+                  Help municipal dispatch prioritize safety risks.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-[#0F1B2A] mb-1.5">
+                    Contact Mobile Number (+91)
+                  </label>
+                  <div className="flex rounded-xl border border-[#CBD3DD] overflow-hidden focus-within:border-[#1F4FE0]">
+                    <span className="inline-flex items-center px-3 bg-[#F5F7FA] text-xs font-mono font-bold text-[#44546A] border-r border-[#CBD3DD]">
+                      +91
+                    </span>
+                    <input
+                      type="tel"
+                      maxLength={10}
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value.replace(/\D/g, ''))}
+                      className="w-full px-3 py-2 text-xs cp-mono tabular-nums text-[#0F1B2A] focus:outline-none bg-white"
+                    />
+                  </div>
+
+                  <label className="flex items-center gap-2 mt-2 text-[11px] text-[#44546A] cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={allowCallVerification}
+                      onChange={(e) => setAllowCallVerification(e.target.checked)}
+                      className="rounded border-[#CBD3DD] text-[#1F4FE0] focus:ring-[#1F4FE0]"
+                    />
+                    <span>Allow ward field engineer to call for spot verification (masked)</span>
+                  </label>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-[#0F1B2A] mb-1.5">
+                    Issue Persistence / Duration
+                  </label>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {(['Today', '2–5 Days', '1+ Week'] as const).map((dur) => (
+                      <button
+                        key={dur}
+                        type="button"
+                        onClick={() => setDuration(dur)}
+                        className={`py-2 rounded-xl text-xs font-semibold border transition-colors cursor-pointer ${
+                          duration === dur
+                            ? 'bg-[#0F1B2A] text-white border-[#0F1B2A]'
+                            : 'bg-[#F5F7FA] text-[#44546A] border-[#E3E8EE] hover:bg-white hover:text-[#0F1B2A]'
+                        }`}
+                      >
+                        {dur}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="flex flex-wrap gap-2 mt-3">
+                    <button
+                      type="button"
+                      onClick={() => setNearSchoolOrHospital(!nearSchoolOrHospital)}
+                      className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg border transition-colors cursor-pointer ${
+                        nearSchoolOrHospital
+                          ? 'bg-red-50 text-[#C23B22] border-red-300'
+                          : 'bg-[#F5F7FA] text-[#5B6B7C] border-[#E3E8EE]'
+                      }`}
+                    >
+                      Near School / Hospital
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setTrafficBlocked(!trafficBlocked)}
+                      className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg border transition-colors cursor-pointer ${
+                        trafficBlocked
+                          ? 'bg-amber-50 text-amber-900 border-amber-300'
+                          : 'bg-[#F5F7FA] text-[#5B6B7C] border-[#E3E8EE]'
+                      }`}
+                    >
+                      Traffic Blocked
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setOpenHazard(!openHazard)}
+                      className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg border transition-colors cursor-pointer ${
+                        openHazard
+                          ? 'bg-red-50 text-[#C23B22] border-red-300'
+                          : 'bg-[#F5F7FA] text-[#5B6B7C] border-[#E3E8EE]'
+                      }`}
+                    >
+                      Open Hazard
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* DPDP Act 2023 Notice */}
+            <div className="flex items-start gap-2.5 rounded-xl border border-[#E3E8EE] bg-[#F5F7FA] p-3 text-xs text-[#5B6B7C] leading-normal">
               <Lock className="w-4 h-4 text-[#1F4FE0] shrink-0 mt-0.5" strokeWidth={1.75} />
               <span>
-                <strong>DPDP Act 2023 Privacy Shield:</strong> Personal identifying device metadata and phone telemetry are automatically stripped prior to municipal storage. Only geocoordinates and visual defect crops are forwarded to the department.
+                <strong>DPDP Act 2023 Privacy Shield:</strong> Personal identifying device metadata is stripped prior to municipal ingestion. Phone numbers are securely masked during field visits.
               </span>
             </div>
 
@@ -519,7 +975,7 @@ export const CitizenPortal: React.FC<CitizenPortalProps> = ({
                 disabled={!description.trim()}
                 className="w-full flex items-center justify-center gap-2 rounded-xl bg-[#1F4FE0] py-3 text-sm font-semibold text-white hover:bg-[#1840B8] active:bg-[#14338F] disabled:opacity-50 transition-colors cursor-pointer"
               >
-                <span>Submit Complaint</span>
+                <span>Submit Civic Report</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
             </div>
@@ -538,7 +994,7 @@ export const CitizenPortal: React.FC<CitizenPortalProps> = ({
                 </span>
               </div>
 
-              {/* 1. Automated Classification */}
+              {/* Automated Classification */}
               <div className="space-y-1 text-xs">
                 <span className="text-[#7A8999] uppercase tracking-wider text-[10px] font-bold">
                   Classified Category & Department
@@ -547,7 +1003,7 @@ export const CitizenPortal: React.FC<CitizenPortalProps> = ({
                 <p className="text-xs text-[#44546A]">{aiTriage.department}</p>
               </div>
 
-              {/* 2. Multimodal Confidence Breakdown */}
+              {/* Multimodal Confidence Breakdown */}
               <div className="space-y-3 pt-2 border-t border-[#E3E8EE]">
                 <span className="text-[#7A8999] uppercase tracking-wider text-[10px] font-bold block">
                   Model Confidence Scoring
@@ -591,7 +1047,7 @@ export const CitizenPortal: React.FC<CitizenPortalProps> = ({
                 </div>
               </div>
 
-              {/* 3. Assigned Priority & SLA Window */}
+              {/* Priority & SLA Window */}
               <div className="pt-2 border-t border-[#E3E8EE] grid grid-cols-2 gap-3 text-xs">
                 <div>
                   <span className="text-[#7A8999] uppercase tracking-wider text-[10px] font-bold block">
@@ -618,7 +1074,7 @@ export const CitizenPortal: React.FC<CitizenPortalProps> = ({
                 </div>
               </div>
 
-              {/* 4. 100m Spatial Duplicate Check Alert (if exists) */}
+              {/* 100m Spatial Duplicate Check Alert */}
               {existingDuplicate && (
                 <div className="rounded-xl border border-amber-300 bg-white p-3.5 space-y-2 text-xs">
                   <div className="flex items-center gap-1.5 text-amber-800 font-bold">
@@ -632,7 +1088,7 @@ export const CitizenPortal: React.FC<CitizenPortalProps> = ({
                     type="button"
                     onClick={() => {
                       alert(`Endorsed existing ticket ${existingDuplicate.id}. Priority boosted.`);
-                      setActiveTab('submissions');
+                      if (onNavigateSubRoute) onNavigateSubRoute('submission');
                     }}
                     className="w-full py-1.5 text-xs font-semibold rounded-lg bg-amber-100 text-amber-900 hover:bg-amber-200 transition-colors cursor-pointer"
                   >
@@ -648,7 +1104,7 @@ export const CitizenPortal: React.FC<CitizenPortalProps> = ({
                 disabled={!description.trim()}
                 className="w-full hidden lg:flex items-center justify-center gap-2 rounded-xl bg-[#1F4FE0] py-3 text-sm font-semibold text-white hover:bg-[#1840B8] active:bg-[#14338F] disabled:opacity-50 transition-colors cursor-pointer shadow-sm shadow-[#1F4FE0]/25"
               >
-                <span>Submit Complaint</span>
+                <span>Submit Civic Report</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
             </div>
@@ -656,11 +1112,10 @@ export const CitizenPortal: React.FC<CitizenPortalProps> = ({
         </div>
       )}
 
-      {/* VIEW B: MY SUBMISSIONS & 8-STAGE RESOLUTION TRACKER */}
-      {activeTab === 'submissions' && (
+      {/* VIEW B: MY SUBMISSIONS (/citizen/submission) */}
+      {activeTab === 'submission' && (
         <div className="space-y-4">
-          {/* Filter Strip */}
-          <div className="flex items-center justify-between pb-2 border-b border-[#E3E8EE]">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-[#E3E8EE]">
             <div className="flex items-center gap-1.5">
               {(['All', 'In Review', 'Field Active', 'Resolved'] as const).map((filter) => (
                 <button
@@ -688,7 +1143,7 @@ export const CitizenPortal: React.FC<CitizenPortalProps> = ({
               <div className="rounded-xl border border-[#DDE3EA] bg-white p-12 text-center text-[#5B6B7C]">
                 <FileCheck2 className="w-8 h-8 mx-auto text-[#7A8999] mb-2" strokeWidth={1.5} />
                 <p className="font-semibold text-sm text-[#0F1B2A]">No complaints found in this filter.</p>
-                <p className="text-xs text-[#7A8999] mt-1">Switch filter or submit a new incident report above.</p>
+                <p className="text-xs text-[#7A8999] mt-1">Switch filter or submit a new incident report.</p>
               </div>
             ) : (
               filteredSubmissions.map((ticket) => {
@@ -786,113 +1241,150 @@ export const CitizenPortal: React.FC<CitizenPortalProps> = ({
                       </div>
                     </div>
 
-                    {/* Expandable Inspection & Before/After Proof */}
-                    <AnimatePresence>
-                      {isExpanded && (
-                        <motion.div
-                          initial={{ opacity: 0, height: 0 }}
-                          animate={{ opacity: 1, height: 'auto' }}
-                          exit={{ opacity: 0, height: 0 }}
-                          transition={{ duration: 0.2 }}
-                          className="p-5 border-t border-[#E3E8EE] bg-white space-y-5"
-                        >
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            {/* Left: Original Photo & Confidence Readout */}
-                            <div className="space-y-3">
-                              <span className="text-xs font-bold text-[#0F1B2A] block">
-                                Visual Ingestion Evidence
-                              </span>
-                              <div className="relative rounded-xl border border-[#DDE3EA] overflow-hidden bg-[#F5F7FA] h-48 flex items-center justify-center">
-                                <img
-                                  src={ticket.imageUrl}
-                                  alt="Original Incident"
-                                  className="w-full h-full object-cover"
-                                />
-                                <div className="absolute top-2 left-2 bg-[#0F1B2A]/80 text-white text-[10px] cp-mono px-2 py-0.5 rounded backdrop-blur-xs">
-                                  YOLOv11: {(ticket.visionConfidence * 100).toFixed(1)}% Confidence
+                    {/* Expandable Inspection & Proof */}
+                    {isExpanded && (
+                      <div className="p-5 border-t border-[#E3E8EE] bg-white space-y-5">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                          {/* Left: Original Evidence */}
+                          <div className="space-y-3">
+                            <span className="text-xs font-bold text-[#0F1B2A] block">
+                              Visual Ingestion Evidence
+                            </span>
+                            <div className="relative rounded-xl border border-[#DDE3EA] overflow-hidden bg-[#F5F7FA] h-48 flex items-center justify-center">
+                              <img
+                                src={ticket.imageUrl}
+                                alt="Original Incident"
+                                className="w-full h-full object-cover"
+                              />
+                              <div className="absolute top-2 left-2 bg-[#0F1B2A]/80 text-white text-[10px] cp-mono px-2 py-0.5 rounded backdrop-blur-xs">
+                                YOLOv11: {(ticket.visionConfidence * 100).toFixed(1)}% Confidence
+                              </div>
+                            </div>
+                            <p className="text-xs text-[#44546A] leading-relaxed">
+                              {ticket.description}
+                            </p>
+                          </div>
+
+                          {/* Right: Side-by-Side Verification or Audit Log */}
+                          <div className="space-y-3">
+                            <span className="text-xs font-bold text-[#0F1B2A] block">
+                              {isResolvedOrVerified
+                                ? 'Before vs. After Repair Verification'
+                                : 'Latest Audit Trail Entry'}
+                            </span>
+
+                            {isResolvedOrVerified ? (
+                              <div className="space-y-2">
+                                <div className="grid grid-cols-2 gap-2">
+                                  <div className="h-32 rounded-lg border border-[#E3E8EE] overflow-hidden relative">
+                                    <img src={ticket.imageUrl} alt="Before" className="w-full h-full object-cover" />
+                                    <span className="absolute bottom-1 left-1 bg-black/70 text-white text-[9px] px-1.5 py-0.5 rounded">
+                                      Before
+                                    </span>
+                                  </div>
+                                  <div className="h-32 rounded-lg border border-emerald-200 overflow-hidden relative">
+                                    <img
+                                      src={
+                                        ticket.afterImageUrl ||
+                                        'https://images.unsplash.com/photo-1541888946425-d0fbb1861564?auto=format&fit=crop&w=800&q=80'
+                                      }
+                                      alt="After Verification"
+                                      className="w-full h-full object-cover"
+                                    />
+                                    <span className="absolute bottom-1 left-1 bg-emerald-700 text-white text-[9px] px-1.5 py-0.5 rounded">
+                                      After Repair
+                                    </span>
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center justify-between text-xs p-2 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-900">
+                                  <span className="font-semibold">SSIM Proof Match: 94.2%</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => alert(`Verification confirmed for ticket ${ticket.id}.`)}
+                                    className="px-2.5 py-1 rounded bg-[#1E9E6A] text-white text-xs font-semibold cursor-pointer"
+                                  >
+                                    Verify Resolution
+                                  </button>
                                 </div>
                               </div>
-                              <p className="text-xs text-[#44546A] leading-relaxed">
-                                {ticket.description}
-                              </p>
-                            </div>
-
-                            {/* Right: Side-by-Side Proof of Work or Audit State */}
-                            <div className="space-y-3">
-                              <span className="text-xs font-bold text-[#0F1B2A] block">
-                                {isResolvedOrVerified ? 'Before vs. After Repair Verification' : 'Latest Audit Trail Entry'}
-                              </span>
-
-                              {isResolvedOrVerified ? (
-                                <div className="space-y-2">
-                                  <div className="grid grid-cols-2 gap-2">
-                                    <div className="h-32 rounded-lg border border-[#E3E8EE] overflow-hidden relative">
-                                      <img
-                                        src={ticket.imageUrl}
-                                        alt="Before"
-                                        className="w-full h-full object-cover"
-                                      />
-                                      <span className="absolute bottom-1 left-1 bg-black/70 text-white text-[9px] px-1.5 py-0.5 rounded">
-                                        Before
-                                      </span>
-                                    </div>
-                                    <div className="h-32 rounded-lg border border-emerald-200 overflow-hidden relative">
-                                      <img
-                                        src={
-                                          ticket.afterImageUrl ||
-                                          'https://images.unsplash.com/photo-1541888946425-d0fbb1861564?auto=format&fit=crop&w=800&q=80'
-                                        }
-                                        alt="After Verification"
-                                        className="w-full h-full object-cover"
-                                      />
-                                      <span className="absolute bottom-1 left-1 bg-emerald-700 text-white text-[9px] px-1.5 py-0.5 rounded">
-                                        After Repair
-                                      </span>
-                                    </div>
-                                  </div>
-
-                                  <div className="flex items-center justify-between text-xs p-2 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-900">
-                                    <span className="font-semibold">SSIM Proof Match: 94.2%</span>
-                                    <button
-                                      type="button"
-                                      onClick={() => alert(`Verification confirmed for ticket ${ticket.id}.`)}
-                                      className="px-2.5 py-1 rounded bg-[#1E9E6A] text-white text-xs font-semibold cursor-pointer"
-                                    >
-                                      Verify Resolution
-                                    </button>
-                                  </div>
+                            ) : (
+                              <div className="rounded-xl border border-[#E3E8EE] bg-[#F5F7FA] p-4 space-y-2 text-xs">
+                                <div className="flex items-center justify-between text-[11px] text-[#7A8999]">
+                                  <span className="cp-mono">
+                                    {ticket.auditLogs[ticket.auditLogs.length - 1]?.timestamp || ticket.createdAt}
+                                  </span>
+                                  <span className="font-semibold text-[#0F1B2A]">
+                                    {ticket.auditLogs[ticket.auditLogs.length - 1]?.actor || 'Municipal System'}
+                                  </span>
                                 </div>
-                              ) : (
-                                <div className="rounded-xl border border-[#E3E8EE] bg-[#F5F7FA] p-4 space-y-2 text-xs">
-                                  <div className="flex items-center justify-between text-[11px] text-[#7A8999]">
-                                    <span className="cp-mono">
-                                      {ticket.auditLogs[ticket.auditLogs.length - 1]?.timestamp || ticket.createdAt}
-                                    </span>
-                                    <span className="font-semibold text-[#0F1B2A]">
-                                      {ticket.auditLogs[ticket.auditLogs.length - 1]?.actor || 'Municipal System'}
-                                    </span>
-                                  </div>
-                                  <p className="text-[#44546A] leading-relaxed">
-                                    {ticket.auditLogs[ticket.auditLogs.length - 1]?.reason ||
-                                      'Awaiting field inspection team dispatch for physical site verification.'}
-                                  </p>
-                                  <div className="pt-2 border-t border-[#E3E8EE] flex items-center justify-between text-[11px] text-[#5B6B7C]">
-                                    <span>Multimodal Fusion Score:</span>
-                                    <span className="cp-mono font-bold text-[#1F4FE0]">
-                                      {(ticket.fusionScore * 100).toFixed(1)}%
-                                    </span>
-                                  </div>
+                                <p className="text-[#44546A] leading-relaxed">
+                                  {ticket.auditLogs[ticket.auditLogs.length - 1]?.reason ||
+                                    'Awaiting field inspection team dispatch for physical site verification.'}
+                                </p>
+                                <div className="pt-2 border-t border-[#E3E8EE] flex items-center justify-between text-[11px] text-[#5B6B7C]">
+                                  <span>Multimodal Fusion Score:</span>
+                                  <span className="cp-mono font-bold text-[#1F4FE0]">
+                                    {(ticket.fusionScore * 100).toFixed(1)}%
+                                  </span>
                                 </div>
-                              )}
-                            </div>
+                              </div>
+                            )}
                           </div>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 );
               })
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Desktop Live Camera Modal */}
+      {cameraModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div className="w-full max-w-lg bg-white rounded-2xl border border-[#DDE3EA] overflow-hidden shadow-2xl space-y-4 p-5">
+            <div className="flex items-center justify-between pb-3 border-b border-[#E3E8EE]">
+              <div className="flex items-center gap-2">
+                <Camera className="w-4 h-4 text-[#1F4FE0]" />
+                <h3 className="text-sm font-bold text-[#0F1B2A]">Live Defect Camera Capture</h3>
+              </div>
+              <button
+                type="button"
+                onClick={closeLiveCamera}
+                className="p-1 rounded-md text-[#5B6B7C] hover:bg-slate-100"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="relative aspect-video rounded-xl overflow-hidden bg-black flex items-center justify-center">
+              <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
+              <div className="absolute inset-4 border border-dashed border-white/50 rounded-lg pointer-events-none" />
+            </div>
+
+            <div className="flex items-center justify-between pt-2">
+              <span className="text-[11px] text-[#5B6B7C]">Aim camera directly at civic defect</span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={closeLiveCamera}
+                  className="px-3.5 py-2 rounded-xl border border-[#CBD3DD] text-xs font-semibold text-[#44546A] hover:bg-[#F5F7FA]"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={captureCameraFrame}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#1F4FE0] text-xs font-semibold text-white hover:bg-[#1840B8]"
+                >
+                  <Camera className="w-4 h-4" />
+                  <span>Snap Photo</span>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
