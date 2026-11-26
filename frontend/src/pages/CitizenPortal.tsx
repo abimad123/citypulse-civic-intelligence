@@ -422,7 +422,7 @@ export const CitizenPortal: React.FC<CitizenPortalProps> = ({
       priority: aiTriage.priority,
       stage: 'AI Analyzed',
       ward: location.ward || 'Model Town',
-      city: location.city || `${location.district} Municipal Area`,
+      city: location.city || (location.district ? `${location.district} Municipal Area` : 'Municipal Area'),
       state: location.state || 'Punjab',
       lat: location.lat || 30.9025,
       lng: location.lng || 75.8589,

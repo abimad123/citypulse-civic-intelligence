@@ -17,6 +17,8 @@ export interface PincodeLookupResult {
   stateName: string;
   stateIsoCode?: string;
   district: string;
+  block?: string;
+  taluk?: string;
   postOffices: string[];
   division?: string;
   region?: string;
@@ -939,6 +941,150 @@ export function getDistrictsAndCitiesByState(stateIsoCode: string): IndianDistri
   return Array.from(cityMap.values()).sort((a, b) => a.name.localeCompare(b.name));
 }
 
+// List of prominent Indian cities with Municipal Corporations (Nagar Nigam)
+const MAJOR_MUNICIPAL_CORPORATIONS = new Set([
+  'ludhiana',
+  'kollam',
+  'thiruvananthapuram',
+  'kochi',
+  'cochin',
+  'kozhikode',
+  'calicut',
+  'thrissur',
+  'kannur',
+  'delhi',
+  'new delhi',
+  'mumbai',
+  'pune',
+  'nagpur',
+  'nashik',
+  'thane',
+  'navi mumbai',
+  'aurangabad',
+  'chhatrapati sambhajinagar',
+  'solapur',
+  'bengaluru',
+  'bangalore',
+  'mysuru',
+  'mysore',
+  'hubballi',
+  'dharwad',
+  'mangaluru',
+  'mangalore',
+  'chennai',
+  'coimbatore',
+  'madurai',
+  'tiruchirappalli',
+  'salem',
+  'tirunelveli',
+  'hyderabad',
+  'warangal',
+  'ahmedabad',
+  'surat',
+  'vadodara',
+  'rajkot',
+  'gandhinagar',
+  'jaipur',
+  'jodhpur',
+  'kota',
+  'bikaner',
+  'ajmer',
+  'lucknow',
+  'kanpur',
+  'varanasi',
+  'agra',
+  'prayagraj',
+  'allahabad',
+  'ghaziabad',
+  'meerut',
+  'bareilly',
+  'aligarh',
+  'moradabad',
+  'patna',
+  'gaya',
+  'bhagalpur',
+  'muzaffarpur',
+  'bhopal',
+  'indore',
+  'gwalior',
+  'jabalpur',
+  'ujjain',
+  'chandigarh',
+  'amritsar',
+  'jalandhar',
+  'patiala',
+  'bathinda',
+  'kolkata',
+  'howrah',
+  'asansol',
+  'siliguri',
+  'durgapur',
+  'raipur',
+  'bilaspur',
+  'durg',
+  'bhilai',
+  'ranchi',
+  'dhanbad',
+  'jamshedpur',
+  'bhubaneswar',
+  'cuttack',
+  'rourkela',
+  'guwahati',
+  'dehradun',
+  'haridwar',
+  'shimla',
+  'srinagar',
+  'jammu',
+  'visakhapatnam',
+  'vijayawada',
+  'guntur',
+]);
+
+/**
+ * Derives an accurate municipal body name based on district and block/city names.
+ * Ensures major municipal corporation cities receive "Municipal Corporation" status,
+ * while other administrative units receive appropriate Municipality / Panchayat designation.
+ */
+export function deriveMunicipalBody(district: string, blockOrCity?: string): string {
+  const distClean = (district || '').trim();
+  const blockClean = (blockOrCity || '').trim();
+
+  // Helper to check if a name matches a major corporation
+  const isMajorCorp = (name: string) => {
+    if (!name) return false;
+    const lower = name.toLowerCase().replace(/[^a-z\s]/g, '').trim();
+    if (MAJOR_MUNICIPAL_CORPORATIONS.has(lower)) return true;
+    for (const corp of MAJOR_MUNICIPAL_CORPORATIONS) {
+      if (lower.includes(corp) || corp.includes(lower)) return true;
+    }
+    return false;
+  };
+
+  // Check block/city first if valid
+  if (blockClean && blockClean.toUpperCase() !== 'NA') {
+    if (isMajorCorp(blockClean)) {
+      return `${blockClean} Municipal Corporation`;
+    }
+    if (distClean && isMajorCorp(distClean)) {
+      return `${distClean} Municipal Corporation`;
+    }
+    if (distClean && blockClean.toLowerCase() !== distClean.toLowerCase()) {
+      return `${blockClean} (${distClean} District)`;
+    }
+    return `${blockClean} Municipality`;
+  }
+
+  // Fallback to district
+  if (distClean) {
+    if (isMajorCorp(distClean)) {
+      return `${distClean} Municipal Corporation`;
+    }
+    return `${distClean} Municipality / Panchayat`;
+  }
+
+  return 'Local Municipal Authority';
+}
+
 /**
  * Look up official postal location details via India Post API (https://api.postalpincode.in/pincode/{pin}).
  * Fails gracefully and silently in case of network issues or offline mode.
@@ -970,11 +1116,16 @@ export async function lookupIndianPincode(pincode: string): Promise<PincodeLooku
       const matchedState = findStateByCodeOrName(stateName);
 
       const postOffices: string[] = block.PostOffice.map((p: any) => p.Name).filter(Boolean);
+      const district = first.District || '';
+      const blockName = (first.Block && first.Block !== 'NA') ? first.Block : undefined;
+      const talukName = (first.Taluk && first.Taluk !== 'NA') ? first.Taluk : undefined;
 
       return {
         stateName: matchedState?.name || stateName,
         stateIsoCode: matchedState?.isoCode,
-        district: first.District || '',
+        district,
+        block: blockName,
+        taluk: talukName,
         postOffices,
         division: first.Division || undefined,
         region: first.Region || undefined,
@@ -1025,14 +1176,15 @@ export async function reverseGeocodeCoords(
       address.city_district ||
       '';
 
-    const city =
+    const rawCity =
       address.city ||
       address.town ||
       address.municipality ||
       address.suburb ||
       address.village ||
-      district ||
       '';
+
+    const city = rawCity ? deriveMunicipalBody(district, rawCity) : deriveMunicipalBody(district);
 
     const ward =
       address.suburb ||

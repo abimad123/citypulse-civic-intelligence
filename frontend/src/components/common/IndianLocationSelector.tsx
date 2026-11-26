@@ -6,6 +6,7 @@ import {
   Loader2,
   Building2,
   Compass,
+  X,
 } from 'lucide-react';
 import {
   getIndianStates,
@@ -13,6 +14,7 @@ import {
   getDistrictsAndCitiesByState,
   lookupIndianPincode,
   reverseGeocodeCoords,
+  deriveMunicipalBody,
   type PincodeLookupResult,
 } from '../../services/indiaLocationService';
 
@@ -98,20 +100,18 @@ export const IndianLocationSelector: React.FC<IndianLocationSelectorProps> = ({
           const newState = matchedState?.name || res.stateName || value.state;
           const newIso = matchedState?.isoCode || value.stateIso;
 
-          // If ward is currently empty or matches a known post office, select first post office
-          let updatedWard = value.ward;
-          if (!updatedWard || updatedWard === 'Model Town') {
-            if (res.postOffices.length > 0 && !res.postOffices.includes(updatedWard)) {
-              updatedWard = res.postOffices[0];
-            }
-          }
+          // Resolve accurate municipal corporation / body from PIN result
+          const resolvedCity = deriveMunicipalBody(res.district, res.block || res.taluk);
+
+          // Select first post office if available, otherwise clear stale ward
+          const updatedWard = res.postOffices.length > 0 ? res.postOffices[0] : '';
 
           onChange({
             ...value,
             state: newState,
             stateIso: newIso,
-            district: res.district || value.district,
-            city: value.city || `${res.district} Municipal Area`,
+            district: res.district,
+            city: resolvedCity,
             ward: updatedWard,
             pincode: cleanPin,
           });
@@ -129,39 +129,38 @@ export const IndianLocationSelector: React.FC<IndianLocationSelectorProps> = ({
     }
   }, [value.pincode]);
 
-  // Handle State selection change
+  // Handle State selection change - reset stale district, city, ward, and pincode
   const handleStateChange = (newIso: string) => {
     const selected = allStates.find((s) => s.isoCode === newIso);
     if (!selected) return;
-
-    const districts = getDistrictsAndCitiesByState(newIso);
-    const firstDistrict = districts[0]?.name || '';
 
     const newLat = selected.latitude ? parseFloat(selected.latitude) : value.lat;
     const newLng = selected.longitude ? parseFloat(selected.longitude) : value.lng;
 
     setPinVerification(null);
+    lastLookedUpPinRef.current = '';
+
     onChange({
       ...value,
       state: selected.name,
       stateIso: selected.isoCode,
-      district: firstDistrict,
-      city: `${firstDistrict} Municipal Corporation`,
-      ward: selected.name === 'Punjab' && firstDistrict === 'Ludhiana' ? 'Model Town' : '',
+      district: '',
+      city: '',
+      ward: '',
       pincode: '',
       lat: newLat,
       lng: newLng,
     });
   };
 
-  // Handle District change
+  // Handle District change - automatically derive municipal body and clear previous ward
   const handleDistrictChange = (newDistrict: string) => {
-    const isLudhiana = value.state === 'Punjab' && newDistrict.toLowerCase().includes('ludhiana');
+    const resolvedCity = newDistrict ? deriveMunicipalBody(newDistrict) : '';
     onChange({
       ...value,
       district: newDistrict,
-      city: `${newDistrict} Municipal Corporation`,
-      ward: isLudhiana ? 'Model Town' : value.ward,
+      city: resolvedCity,
+      ward: '',
     });
   };
 
@@ -194,7 +193,7 @@ export const IndianLocationSelector: React.FC<IndianLocationSelectorProps> = ({
               state: newState,
               stateIso: newIso,
               district: rev.district || value.district,
-              city: rev.city || value.city,
+              city: rev.city || deriveMunicipalBody(rev.district || value.district),
               ward: rev.ward || value.ward,
               pincode: rev.pincode || value.pincode,
               lat,
@@ -386,14 +385,48 @@ export const IndianLocationSelector: React.FC<IndianLocationSelectorProps> = ({
           <div className="relative">
             <input
               type="text"
+              list="city-corporation-options"
               value={value.city || ''}
               onChange={(e) => onChange({ ...value, city: e.target.value })}
-              placeholder="e.g. Ludhiana Municipal Corporation"
+              placeholder="e.g. Kollam Municipal Corporation"
               disabled={disabled}
-              className="w-full rounded-xl border border-[#CBD3DD] px-3.5 py-2 text-xs text-[#0F1B2A] bg-white focus:border-[#1F4FE0] focus:ring-1 focus:ring-[#1F4FE0] focus:outline-none transition-all"
+              className="w-full rounded-xl border border-[#CBD3DD] pl-3.5 pr-8 py-2 text-xs text-[#0F1B2A] bg-white focus:border-[#1F4FE0] focus:ring-1 focus:ring-[#1F4FE0] focus:outline-none transition-all"
             />
-            <Building2 className="w-3.5 h-3.5 text-[#7A8999] absolute right-3 top-2.5 pointer-events-none" />
+            {value.city && !disabled ? (
+              <button
+                type="button"
+                onClick={() => onChange({ ...value, city: '' })}
+                title="Clear city"
+                className="absolute right-2.5 top-2 p-0.5 text-[#7A8999] hover:text-[#0F1B2A] transition-colors cursor-pointer rounded"
+              >
+                <X className="w-3.5 h-3.5" strokeWidth={2} />
+              </button>
+            ) : (
+              <Building2 className="w-3.5 h-3.5 text-[#7A8999] absolute right-3 top-2.5 pointer-events-none" />
+            )}
           </div>
+          <datalist id="city-corporation-options">
+            {availableDistricts.map((d) => (
+              <option key={d.name} value={`${d.name} Municipal Corporation`} />
+            ))}
+            {availableDistricts.map((d) => (
+              <option key={`city-${d.name}`} value={d.name} />
+            ))}
+          </datalist>
+
+          {/* Quick city fill pill if available */}
+          {value.district && (
+            <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+              <span className="text-[10px] text-[#7A8999]">Quick fill:</span>
+              <button
+                type="button"
+                onClick={() => onChange({ ...value, city: deriveMunicipalBody(value.district) })}
+                className="text-[10px] px-2 py-0.5 rounded-md border border-[#E3E8EE] bg-[#F5F7FA] text-[#5B6B7C] hover:text-[#0F1B2A] transition-colors cursor-pointer"
+              >
+                {deriveMunicipalBody(value.district)}
+              </button>
+            </div>
+          )}
         </div>
 
         <div>

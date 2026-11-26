@@ -69,7 +69,7 @@ const PortalView: React.FC<PortalViewProps> = ({ complaints, onAddComplaint, sub
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-[#F8FAFC] p-4 sm:p-6 text-left selection:bg-[#1F4FE0] selection:text-white antialiased">
         <div className="max-w-2xl w-full bg-white border border-[#DDE3EA] rounded-2xl p-6 sm:p-9 shadow-[0_12px_36px_rgba(15,27,42,0.06)] space-y-6">
-          
+
           {/* Official Security Header */}
           <div className="flex flex-col sm:flex-row sm:items-start gap-4 pb-5 border-b border-[#E3E8EE]">
             <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-amber-50 border border-amber-200/90 text-amber-800">
@@ -89,8 +89,8 @@ const PortalView: React.FC<PortalViewProps> = ({ complaints, onAddComplaint, sub
                 {isCitizen
                   ? 'Municipal Authority Workspace Restricted'
                   : isRoleMismatch
-                  ? 'Access Clearance Insufficient'
-                  : 'Official Authentication Required'}
+                    ? 'Access Clearance Insufficient'
+                    : 'Official Authentication Required'}
               </h1>
               <p className="text-xs sm:text-sm text-[#44546A] leading-relaxed">
                 Access to the <strong className="text-[#0F1B2A]">{portalInfo.name}</strong> is restricted to verified municipal authorities, department commissioners, and authorized field crews.
@@ -359,3 +359,5 @@ function App() {
 }
 
 export default App;
+
+
