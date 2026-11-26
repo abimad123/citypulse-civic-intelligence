@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { BrowserRouter, Routes, Route, useNavigate, useParams, Navigate } from 'react-router-dom';
-import { ShieldAlert, ArrowLeft, KeyRound, ArrowRight } from 'lucide-react';
+import { ShieldAlert, ArrowLeft, KeyRound } from 'lucide-react';
 import { MOCK_COMPLAINTS } from './data/mockComplaints';
 import { AppShell, type TabKey } from './components/layout/AppShell';
 import { HomeLanding, type PortalKey } from './pages/HomeLanding';
@@ -36,9 +36,10 @@ const PORTAL_META: Record<TabKey, { name: string; requiredRole: string; descript
 // Protected Portal View Wrapper
 interface PortalViewProps {
   complaints: CivicComplaint[];
+  onAddComplaint: (newComplaint: CivicComplaint) => void;
 }
 
-const PortalView: React.FC<PortalViewProps> = ({ complaints }) => {
+const PortalView: React.FC<PortalViewProps> = ({ complaints, onAddComplaint }) => {
   const { portalId } = useParams<{ portalId: string }>();
   const navigate = useNavigate();
   const { user, canAccessPortal } = useAuth();
@@ -142,6 +143,7 @@ const PortalView: React.FC<PortalViewProps> = ({ complaints }) => {
       activeTab={activeTab}
       onTabChange={(tab: TabKey) => navigate(`/${tab}`)}
       onNavigateHome={() => navigate('/')}
+      onAddComplaint={onAddComplaint}
     />
   );
 };
@@ -164,7 +166,11 @@ const HomeView: React.FC<HomeViewProps> = ({ complaints }) => {
 };
 
 function App() {
-  const [complaints] = useState<CivicComplaint[]>(() => MOCK_COMPLAINTS);
+  const [complaints, setComplaints] = useState<CivicComplaint[]>(() => MOCK_COMPLAINTS);
+
+  const handleAddComplaint = (newComplaint: CivicComplaint) => {
+    setComplaints((prev) => [newComplaint, ...prev]);
+  };
 
   return (
     <AuthProvider>
@@ -172,8 +178,16 @@ function App() {
         <Routes>
           {/* Clean semantic URL structure */}
           <Route path="/" element={<HomeView complaints={complaints} />} />
-          <Route path="/:portalId" element={<PortalView complaints={complaints} />} />
-          
+          <Route
+            path="/:portalId"
+            element={
+              <PortalView
+                complaints={complaints}
+                onAddComplaint={handleAddComplaint}
+              />
+            }
+          />
+
           {/* Fallback to root */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
