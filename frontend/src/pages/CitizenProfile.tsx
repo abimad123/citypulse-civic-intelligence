@@ -1,22 +1,12 @@
 import React, { useState } from 'react';
 import {
-  User,
   ShieldCheck,
   CheckCircle2,
   Save,
-  Lock,
-  Phone,
-  Mail,
-  MapPin,
-  Globe,
-  Bell,
-  Eye,
-  FileCheck2,
-  Award,
-  Sparkles,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import type { CivicComplaint } from '../types/civic';
+import { IndianLocationSelector } from '../components/common/IndianLocationSelector';
 
 interface CitizenProfileProps {
   complaints: CivicComplaint[];
@@ -101,109 +91,108 @@ export const CitizenProfile: React.FC<CitizenProfileProps> = ({ complaints }) =>
                 <span>•</span>
                 <span>{email}</span>
                 <span>•</span>
-                <span>{ward}</span>
+                <span>{ward || 'Model Town'}</span>
               </div>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 self-start sm:self-auto">
-            <span className="cp-mono text-xs px-2.5 py-1 rounded-lg bg-[#F5F7FA] border border-[#E3E8EE] text-[#44546A]">
-              DPDP Tier-1 Verified
-            </span>
-          </div>
+          <button
+            onClick={handleSave}
+            type="button"
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#1F4FE0] hover:bg-[#1840B8] active:bg-[#14338F] px-4 py-2.5 text-xs font-semibold text-white transition-colors cursor-pointer shadow-xs"
+          >
+            <Save className="w-4 h-4" />
+            <span>Save Profile</span>
+          </button>
         </div>
 
-        {/* Personal Impact Metrics */}
-        <div className="grid grid-cols-3 gap-3 pt-6">
-          <div className="rounded-xl border border-[#E3E8EE] bg-[#F5F7FA] p-4 text-center">
-            <span className="text-xs text-[#5B6B7C] font-semibold uppercase tracking-wider block">
+        {/* Live Civic Contribution Metric Rail */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-6">
+          <div className="p-4 rounded-xl bg-[#F5F7FA] border border-[#E3E8EE]">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-[#7A8999] block">
               Reports Filed
             </span>
             <span className="text-2xl font-bold cp-mono tabular-nums text-[#0F1B2A] mt-1 block">
               {reportsFiled}
             </span>
-            <span className="text-[10px] text-[#7A8999]">Across active wards</span>
+            <span className="text-[10px] text-[#7A8999]">Across active municipal wards</span>
           </div>
 
-          <div className="rounded-xl border border-emerald-200/80 bg-emerald-50/40 p-4 text-center">
-            <span className="text-xs text-emerald-800 font-semibold uppercase tracking-wider block">
-              Resolved Issues
+          <div className="p-4 rounded-xl bg-emerald-50/70 border border-emerald-200">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-800 block">
+              Verified Resolved
             </span>
             <span className="text-2xl font-bold cp-mono tabular-nums text-emerald-900 mt-1 block">
               {resolvedIssues}
             </span>
-            <span className="text-[10px] text-emerald-700">Verified by crews</span>
+            <span className="text-[10px] text-emerald-700">Verified by field crew</span>
           </div>
 
-          <div className="rounded-xl border border-[#E3E8EE] bg-[#F5F7FA] p-4 text-center">
-            <span className="text-xs text-[#5B6B7C] font-semibold uppercase tracking-wider block">
-              Endorsements
+          <div className="p-4 rounded-xl bg-blue-50/70 border border-blue-200">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-[#1F4FE0] block">
+              Civic Trust Score
             </span>
             <span className="text-2xl font-bold cp-mono tabular-nums text-[#1F4FE0] mt-1 block">
-              +{communityEndorsements}
+              {94 + communityEndorsements * 0.2}%
             </span>
-            <span className="text-[10px] text-[#7A8999]">Community validations</span>
+            <span className="text-[10px] text-blue-700">Tier-1 Citizen Reporter</span>
           </div>
         </div>
       </div>
 
-      {/* Save Success Banner */}
       {savedSuccess && (
-        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 flex items-center justify-between text-xs text-emerald-900">
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50/90 p-4 flex items-center justify-between text-emerald-900 text-xs font-semibold animate-in fade-in duration-200">
           <div className="flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4 text-[#1E9E6A] shrink-0" />
-            <span>Profile and default location preferences saved. New reports will auto-populate with these details.</span>
+            <CheckCircle2 className="w-4 h-4 text-[#1E9E6A]" />
+            <span>Citizen profile, municipal location preferences, and DPDP settings saved successfully.</span>
           </div>
+          <span className="font-mono text-[10px] text-emerald-700">SYNCED_LOCAL</span>
         </div>
       )}
 
-      {/* Form: Editable Personal & Address Details */}
+      {/* Main Form Fields */}
       <form onSubmit={handleSave} className="space-y-6">
-        <div className="rounded-2xl border border-[#DDE3EA] bg-white p-6 sm:p-7 space-y-6 shadow-xs">
+        {/* Personal & Contact Details */}
+        <div className="rounded-2xl border border-[#DDE3EA] bg-white p-6 sm:p-7 space-y-4 shadow-xs">
           <div>
-            <h3 className="text-base font-bold text-[#0F1B2A]">Personal & Dispatch Contact Details</h3>
+            <h3 className="text-base font-bold text-[#0F1B2A]">Personal & Contact Details</h3>
             <p className="text-xs text-[#5B6B7C] mt-0.5">
-              Used to mask your phone number for on-ground field engineers when inspecting your reports.
+              Verified identity details associated with your citizen grievance filings.
             </p>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-bold text-[#0F1B2A] mb-1.5">Full Name</label>
-              <div className="relative">
-                <input
-                  type="text"
-                  required
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className="w-full rounded-xl border border-[#CBD3DD] px-3 py-2 text-sm text-[#0F1B2A] focus:border-[#1F4FE0] focus:outline-none focus:ring-1 focus:ring-[#1F4FE0] bg-white"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-[#0F1B2A] mb-1.5">Registered Email (Read-only)</label>
               <input
-                type="email"
-                disabled
-                value={email}
-                className="w-full rounded-xl border border-[#E3E8EE] px-3 py-2 text-sm text-[#7A8999] bg-[#F5F7FA] cursor-not-allowed"
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="w-full rounded-xl border border-[#CBD3DD] px-3.5 py-2 text-xs text-[#0F1B2A] focus:border-[#1F4FE0] focus:outline-none focus:ring-1 focus:ring-[#1F4FE0] bg-white transition-all"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-[#0F1B2A] mb-1.5">Mobile Number (+91)</label>
-              <div className="flex rounded-xl border border-[#CBD3DD] overflow-hidden focus-within:border-[#1F4FE0] focus-within:ring-1 focus-within:ring-[#1F4FE0]">
-                <span className="inline-flex items-center px-3 bg-[#F5F7FA] text-xs font-mono font-bold text-[#44546A] border-r border-[#CBD3DD]">
-                  +91
-                </span>
+              <label className="block text-xs font-bold text-[#0F1B2A] mb-1.5">Email Address</label>
+              <input
+                type="email"
+                disabled
+                value={email}
+                className="w-full rounded-xl border border-[#E3E8EE] bg-[#F5F7FA] px-3.5 py-2 text-xs text-[#5B6B7C] cursor-not-allowed cp-mono"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-[#0F1B2A] mb-1.5">Phone (+91)</label>
+              <div className="relative">
+                <span className="absolute left-3.5 top-2 text-xs font-mono text-[#7A8999]">+91</span>
                 <input
                   type="tel"
                   maxLength={10}
                   value={phone}
                   onChange={(e) => setPhone(e.target.value.replace(/\D/g, ''))}
                   placeholder="9876543210"
-                  className="w-full px-3 py-2 text-sm cp-mono tabular-nums text-[#0F1B2A] focus:outline-none bg-white"
+                  className="w-full rounded-xl border border-[#CBD3DD] pl-12 pr-3.5 py-2 text-xs cp-mono tabular-nums text-[#0F1B2A] focus:border-[#1F4FE0] focus:outline-none focus:ring-1 focus:ring-[#1F4FE0] bg-white transition-all"
                 />
               </div>
             </div>
@@ -213,10 +202,10 @@ export const CitizenProfile: React.FC<CitizenProfileProps> = ({ complaints }) =>
               <select
                 value={preferredLanguage}
                 onChange={(e) => setPreferredLanguage(e.target.value as any)}
-                className="w-full rounded-xl border border-[#CBD3DD] px-3 py-2 text-sm text-[#0F1B2A] focus:border-[#1F4FE0] focus:outline-none focus:ring-1 focus:ring-[#1F4FE0] bg-white cursor-pointer"
+                className="w-full rounded-xl border border-[#CBD3DD] px-3.5 py-2 text-xs text-[#0F1B2A] focus:border-[#1F4FE0] focus:outline-none focus:ring-1 focus:ring-[#1F4FE0] bg-white cursor-pointer transition-all"
               >
                 <option value="English">English</option>
-                <option value="Hindi">Hindi (हिन्दी)</option>
+                <option value="Hindi">Hindi (हिंदी)</option>
                 <option value="Punjabi">Punjabi (ਪੰਜਾਬੀ)</option>
                 <option value="Hinglish">Hinglish</option>
               </select>
@@ -224,97 +213,37 @@ export const CitizenProfile: React.FC<CitizenProfileProps> = ({ complaints }) =>
           </div>
         </div>
 
-        {/* Default Address & Ward Pre-fill */}
-        <div className="rounded-2xl border border-[#DDE3EA] bg-white p-6 sm:p-7 space-y-6 shadow-xs">
+        {/* Default Address & Ward Pre-fill using reusable IndianLocationSelector */}
+        <div className="rounded-2xl border border-[#DDE3EA] bg-white p-6 sm:p-7 space-y-5 shadow-xs">
           <div>
             <h3 className="text-base font-bold text-[#0F1B2A]">Default Municipal Address</h3>
             <p className="text-xs text-[#5B6B7C] mt-0.5">
-              These details pre-fill your incident reporting screen for rapid single-click submissions.
+              These details pre-fill your incident reporting screen for rapid single-click submissions across all Indian States & Union Territories.
             </p>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-xs font-bold text-[#0F1B2A] mb-1.5">State / UT</label>
-              <select
-                value={stateVal}
-                onChange={(e) => setStateVal(e.target.value)}
-                className="w-full rounded-xl border border-[#CBD3DD] px-3 py-2 text-sm text-[#0F1B2A] focus:border-[#1F4FE0] focus:outline-none focus:ring-1 focus:ring-[#1F4FE0] bg-white cursor-pointer"
-              >
-                <option value="Punjab">Punjab</option>
-                <option value="Delhi">Delhi NCR</option>
-                <option value="Maharashtra">Maharashtra</option>
-                <option value="Karnataka">Karnataka</option>
-                <option value="Telangana">Telangana</option>
-                <option value="Tamil Nadu">Tamil Nadu</option>
-                <option value="Gujarat">Gujarat</option>
-                <option value="Uttar Pradesh">Uttar Pradesh</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-[#0F1B2A] mb-1.5">District</label>
-              <select
-                value={district}
-                onChange={(e) => setDistrict(e.target.value)}
-                className="w-full rounded-xl border border-[#CBD3DD] px-3 py-2 text-sm text-[#0F1B2A] focus:border-[#1F4FE0] focus:outline-none focus:ring-1 focus:ring-[#1F4FE0] bg-white cursor-pointer"
-              >
-                <option value="Ludhiana">Ludhiana</option>
-                <option value="Amritsar">Amritsar</option>
-                <option value="Jalandhar">Jalandhar</option>
-                <option value="SAS Nagar (Mohali)">SAS Nagar (Mohali)</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-[#0F1B2A] mb-1.5">City / Corporation</label>
-              <input
-                type="text"
-                value={city}
-                onChange={(e) => setCity(e.target.value)}
-                className="w-full rounded-xl border border-[#CBD3DD] px-3 py-2 text-sm text-[#0F1B2A] focus:border-[#1F4FE0] focus:outline-none focus:ring-1 focus:ring-[#1F4FE0] bg-white"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-[#0F1B2A] mb-1.5">Default Ward</label>
-              <select
-                value={ward}
-                onChange={(e) => setWard(e.target.value)}
-                className="w-full rounded-xl border border-[#CBD3DD] px-3 py-2 text-sm text-[#0F1B2A] focus:border-[#1F4FE0] focus:outline-none focus:ring-1 focus:ring-[#1F4FE0] bg-white cursor-pointer"
-              >
-                <option value="Model Town">Model Town (Ward 34)</option>
-                <option value="Sarabha Nagar">Sarabha Nagar (Ward 21)</option>
-                <option value="Dugri">Dugri (Ward 48)</option>
-                <option value="Gill Road">Gill Road (Ward 12)</option>
-                <option value="Focal Point">Focal Point (Ward 07)</option>
-                <option value="Civil Lines">Civil Lines (Ward 19)</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-[#0F1B2A] mb-1.5">6-Digit PIN Code</label>
-              <input
-                type="text"
-                maxLength={6}
-                value={pincode}
-                onChange={(e) => setPincode(e.target.value.replace(/\D/g, ''))}
-                placeholder="141002"
-                className="w-full rounded-xl border border-[#CBD3DD] px-3 py-2 text-sm cp-mono tabular-nums text-[#0F1B2A] focus:border-[#1F4FE0] focus:outline-none focus:ring-1 focus:ring-[#1F4FE0] bg-white"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-[#0F1B2A] mb-1.5">Nearby Landmark</label>
-              <input
-                type="text"
-                value={landmark}
-                onChange={(e) => setLandmark(e.target.value)}
-                placeholder="Near Gol Market, opposite SBI"
-                className="w-full rounded-xl border border-[#CBD3DD] px-3 py-2 text-sm text-[#0F1B2A] focus:border-[#1F4FE0] focus:outline-none focus:ring-1 focus:ring-[#1F4FE0] bg-white"
-              />
-            </div>
-          </div>
+          <IndianLocationSelector
+            value={{
+              state: stateVal,
+              district,
+              city,
+              ward,
+              pincode,
+              landmark,
+            }}
+            onChange={(loc) => {
+              setStateVal(loc.state);
+              setDistrict(loc.district);
+              setCity(loc.city);
+              setWard(loc.ward);
+              setPincode(loc.pincode);
+              if (loc.landmark !== undefined) {
+                setLandmark(loc.landmark);
+              }
+            }}
+            showLiveGps={false}
+            showLandmark={true}
+          />
         </div>
 
         {/* Privacy & Notification Controls (DPDP Act 2023) */}
@@ -326,62 +255,62 @@ export const CitizenProfile: React.FC<CitizenProfileProps> = ({ complaints }) =>
             </p>
           </div>
 
-          <div className="divide-y divide-[#E3E8EE]">
-            <div className="py-3.5 flex items-center justify-between gap-4">
-              <div>
-                <p className="text-sm font-bold text-[#0F1B2A]">Automatic EXIF GPS & Device Metadata Stripping</p>
-                <p className="text-xs text-[#5B6B7C] mt-0.5">
-                  Removes device camera serial numbers, IMEI, and personal EXIF headers from civic evidence before storage.
-                </p>
-              </div>
+          <div className="space-y-3 pt-2">
+            <label className="flex items-start gap-3 p-3.5 rounded-xl border border-[#E3E8EE] hover:bg-[#F5F7FA] transition-colors cursor-pointer">
               <input
                 type="checkbox"
                 checked={autoStripMetadata}
                 onChange={(e) => setAutoStripMetadata(e.target.checked)}
-                className="h-4 w-4 rounded border-[#CBD3DD] text-[#1F4FE0] focus:ring-[#1F4FE0] cursor-pointer"
+                className="mt-0.5 h-4 w-4 rounded border-[#CBD3DD] text-[#1F4FE0] focus:ring-[#1F4FE0]"
               />
-            </div>
-
-            <div className="py-3.5 flex items-center justify-between gap-4">
               <div>
-                <p className="text-sm font-bold text-[#0F1B2A]">SMS & WhatsApp Stage Progress Alerts</p>
-                <p className="text-xs text-[#5B6B7C] mt-0.5">
-                  Receive notifications when an issue is assigned to field crew or resolution verification photos are uploaded.
+                <p className="text-xs font-bold text-[#0F1B2A]">Automatic EXIF & Personal Metadata Stripping</p>
+                <p className="text-[11px] text-[#5B6B7C] mt-0.5">
+                  Removes camera serial numbers and device fingerprints from submitted grievance evidence prior to authority review.
                 </p>
               </div>
+            </label>
+
+            <label className="flex items-start gap-3 p-3.5 rounded-xl border border-[#E3E8EE] hover:bg-[#F5F7FA] transition-colors cursor-pointer">
               <input
                 type="checkbox"
                 checked={smsWhatsappAlerts}
                 onChange={(e) => setSmsWhatsappAlerts(e.target.checked)}
-                className="h-4 w-4 rounded border-[#CBD3DD] text-[#1F4FE0] focus:ring-[#1F4FE0] cursor-pointer"
+                className="mt-0.5 h-4 w-4 rounded border-[#CBD3DD] text-[#1F4FE0] focus:ring-[#1F4FE0]"
               />
-            </div>
-
-            <div className="py-3.5 flex items-center justify-between gap-4">
               <div>
-                <p className="text-sm font-bold text-[#0F1B2A]">Anonymous Public Leaderboard Display</p>
-                <p className="text-xs text-[#5B6B7C] mt-0.5">
-                  Mask your name as "Resident ({ward})" on the public civic transparency dashboard.
+                <p className="text-xs font-bold text-[#0F1B2A]">SMS & WhatsApp Dispatch Milestones</p>
+                <p className="text-[11px] text-[#5B6B7C] mt-0.5">
+                  Receive SMS notifications when a work order is dispatched to field crew and when verification photos are uploaded.
                 </p>
               </div>
+            </label>
+
+            <label className="flex items-start gap-3 p-3.5 rounded-xl border border-[#E3E8EE] hover:bg-[#F5F7FA] transition-colors cursor-pointer">
               <input
                 type="checkbox"
                 checked={anonymousLeaderboard}
                 onChange={(e) => setAnonymousLeaderboard(e.target.checked)}
-                className="h-4 w-4 rounded border-[#CBD3DD] text-[#1F4FE0] focus:ring-[#1F4FE0] cursor-pointer"
+                className="mt-0.5 h-4 w-4 rounded border-[#CBD3DD] text-[#1F4FE0] focus:ring-[#1F4FE0]"
               />
-            </div>
+              <div>
+                <p className="text-xs font-bold text-[#0F1B2A]">Anonymous Public Leaderboard Display</p>
+                <p className="text-[11px] text-[#5B6B7C] mt-0.5">
+                  Mask your name as &quot;Resident ({ward})&quot; on the public civic transparency dashboard.
+                </p>
+              </div>
+            </label>
           </div>
         </div>
 
-        {/* Submit Actions */}
+        {/* Bottom Save Action Button */}
         <div className="flex items-center justify-end gap-3 pt-2">
           <button
             type="submit"
-            className="flex items-center gap-2 rounded-xl bg-[#1F4FE0] px-6 py-2.5 text-sm font-semibold text-white hover:bg-[#1840B8] active:bg-[#14338F] shadow-sm shadow-[#1F4FE0]/25 transition-colors cursor-pointer"
+            className="flex items-center gap-2 rounded-xl bg-[#1F4FE0] hover:bg-[#1840B8] active:bg-[#14338F] px-6 py-3 text-xs font-semibold text-white transition-colors cursor-pointer shadow-sm shadow-[#1F4FE0]/20"
           >
             <Save className="w-4 h-4" />
-            <span>Save Preferences</span>
+            <span>Save Profile & Location</span>
           </button>
         </div>
       </form>

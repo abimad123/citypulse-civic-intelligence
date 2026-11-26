@@ -7,11 +7,7 @@ import {
   Megaphone,
   ArrowRight,
   Info,
-  Building2,
-  Lock,
   UserCheck,
-  CheckCircle2,
-  AlertTriangle,
 } from 'lucide-react';
 import { MOCK_COMPLAINTS } from './data/mockComplaints';
 import { AppShell, type TabKey, type CitizenSubRoute } from './components/layout/AppShell';

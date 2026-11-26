@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import {
   Upload,
   Camera,
@@ -7,7 +7,6 @@ import {
   Square,
   RotateCcw,
   Volume2,
-  LocateFixed,
   MapPin,
   CheckCircle2,
   AlertTriangle,
@@ -16,14 +15,16 @@ import {
   ChevronDown,
   ChevronUp,
   Clock,
-  Layers,
   FileCheck2,
   Lock,
-  Phone,
   Image as ImageIcon,
 } from 'lucide-react';
 import type { CivicCategory, CivicComplaint, Department, PriorityTier, TicketStage } from '../types/civic';
 import { WARD_CONFIG } from '../types/civic';
+import {
+  IndianLocationSelector,
+  type IndianLocationValue,
+} from '../components/common/IndianLocationSelector';
 
 export interface CitizenPortalProps {
   complaints: CivicComplaint[];
@@ -156,16 +157,17 @@ export const CitizenPortal: React.FC<CitizenPortalProps> = ({
   const timerIntervalRef = useRef<any>(null);
 
   // Section 3: Indian Administrative Location
-  const [stateVal, setStateVal] = useState<string>('Punjab');
-  const [districtVal, setDistrictVal] = useState<string>('Ludhiana');
-  const [cityVal, setCityVal] = useState<string>('Ludhiana Municipal Corporation');
-  const [selectedWard, setSelectedWard] = useState<string>(
-    userWard && userWard !== 'Auto-Detected (GPS)' ? userWard : 'Model Town'
-  );
-  const [pincode, setPincode] = useState<string>(WARD_METADATA[selectedWard]?.pincode || '141002');
-  const [landmark, setLandmark] = useState<string>('');
-  const [liveGps, setLiveGps] = useState<{ lat: number; lng: number; accuracy: number } | null>(null);
-  const [locatingGps, setLocatingGps] = useState(false);
+  const [location, setLocation] = useState<IndianLocationValue>({
+    state: 'Punjab',
+    stateIso: 'PB',
+    district: 'Ludhiana',
+    city: 'Ludhiana Municipal Corporation',
+    ward: userWard && userWard !== 'Auto-Detected (GPS)' ? userWard : 'Model Town',
+    pincode: '141002',
+    landmark: '',
+    lat: 30.9025,
+    lng: 75.8589,
+  });
 
   // Section 4: Contact Number & Severity Context
   const [phone, setPhone] = useState<string>(userPhone);
@@ -178,43 +180,6 @@ export const CitizenPortal: React.FC<CitizenPortalProps> = ({
   // Submissions View State
   const [statusFilter, setStatusFilter] = useState<'All' | 'In Review' | 'Field Active' | 'Resolved'>('All');
   const [expandedTicketId, setExpandedTicketId] = useState<string | null>(null);
-
-  // Auto-sync PIN when Ward changes
-  const handleWardChange = (newWard: string) => {
-    setSelectedWard(newWard);
-    if (WARD_METADATA[newWard]) {
-      setPincode(WARD_METADATA[newWard].pincode);
-    }
-  };
-
-  // Live GPS Fetcher
-  const handleShareGps = () => {
-    if (!navigator.geolocation) {
-      alert('Geolocation is not supported by your browser.');
-      return;
-    }
-    setLocatingGps(true);
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setLocatingGps(false);
-        setLiveGps({
-          lat: pos.coords.latitude,
-          lng: pos.coords.longitude,
-          accuracy: pos.coords.accuracy || 4.5,
-        });
-        setStateVal('Punjab');
-        setDistrictVal('Ludhiana');
-        setCityVal('Ludhiana Municipal Corporation');
-      },
-      () => {
-        setLocatingGps(false);
-        // Fallback to default ward coordinates
-        const meta = WARD_METADATA[selectedWard] || WARD_METADATA['Model Town'];
-        setLiveGps({ lat: meta.lat, lng: meta.lng, accuracy: 5.0 });
-      },
-      { timeout: 8000, enableHighAccuracy: true }
-    );
-  };
 
   // Audio Recording Flow
   const startRecording = async () => {
@@ -350,8 +315,16 @@ export const CitizenPortal: React.FC<CitizenPortalProps> = ({
       },
     ]);
     setDescription(sample.description);
-    setSelectedWard(sample.ward);
-    setPincode(sample.pincode);
+    setLocation((prev) => ({
+      ...prev,
+      state: 'Punjab',
+      stateIso: 'PB',
+      district: 'Ludhiana',
+      ward: sample.ward,
+      pincode: sample.pincode,
+      lat: WARD_METADATA[sample.ward]?.lat || 30.9025,
+      lng: WARD_METADATA[sample.ward]?.lng || 75.8589,
+    }));
   };
 
   // Deterministic Keyword-Based AI Classification
@@ -420,14 +393,12 @@ export const CitizenPortal: React.FC<CitizenPortalProps> = ({
   const existingDuplicate = useMemo(() => {
     return complaints.find(
       (c) =>
-        c.ward === selectedWard &&
+        (c.ward === location.ward || (c.city && c.city === location.city)) &&
         c.category === aiTriage.category &&
         c.stage !== 'Resolved' &&
         c.stage !== 'Closed'
     );
-  }, [complaints, selectedWard, aiTriage.category]);
-
-  const activeCoordinates = liveGps || WARD_METADATA[selectedWard] || WARD_METADATA['Model Town'];
+  }, [complaints, location.ward, location.city, aiTriage.category]);
 
   // Submit Complaint Handler
   const handleSubmitReport = (e: React.FormEvent) => {
@@ -442,19 +413,19 @@ export const CitizenPortal: React.FC<CitizenPortalProps> = ({
 
     const newComplaint: CivicComplaint = {
       id: newTicketId,
-      title: `${aiTriage.category} reported near ${landmark || selectedWard}`,
+      title: `${aiTriage.category} reported near ${location.landmark || location.ward || location.district}`,
       description: `${description.trim()} ${
         audioUrl ? '[Voice note attached]' : ''
-      } ${landmark ? `• Landmark: ${landmark}` : ''} • PIN: ${pincode}`,
+      } ${location.landmark ? `• Landmark: ${location.landmark}` : ''} • PIN: ${location.pincode || '141002'}`,
       category: aiTriage.category,
       department: aiTriage.department,
       priority: aiTriage.priority,
       stage: 'AI Analyzed',
-      ward: selectedWard,
-      city: cityVal,
-      state: stateVal,
-      lat: activeCoordinates.lat,
-      lng: activeCoordinates.lng,
+      ward: location.ward || 'Model Town',
+      city: location.city || `${location.district} Municipal Area`,
+      state: location.state || 'Punjab',
+      lat: location.lat || 30.9025,
+      lng: location.lng || 75.8589,
       imageUrl:
         photos[0]?.url ||
         'https://images.unsplash.com/photo-1515162816999-a0c47dc192f7?auto=format&fit=crop&w=800&q=80',
@@ -471,7 +442,7 @@ export const CitizenPortal: React.FC<CitizenPortalProps> = ({
           action: 'confirm',
           previousValue: 'None',
           newValue: 'AI Analyzed',
-          reason: `Ingested ${photos.length} visual evidence photos + RoBERTa triage. Contact: +91-${phone}`,
+          reason: `Ingested ${photos.length} visual evidence photos + RoBERTa triage. Location: ${location.ward || 'Ward'}, ${location.district}, ${location.state} (${location.pincode || 'PIN'}). Contact: +91-${phone}`,
         },
       ],
     };
@@ -745,119 +716,21 @@ export const CitizenPortal: React.FC<CitizenPortalProps> = ({
 
             {/* SECTION 3: INDIAN ADMINISTRATIVE LOCATION & PIN CODE */}
             <div className="rounded-2xl border border-[#DDE3EA] bg-white p-5 sm:p-6 space-y-4 shadow-xs">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-xs font-bold text-[#0F1B2A] uppercase tracking-wider">
-                    3. Indian Administrative Location & PIN Code
-                  </h3>
-                  <p className="text-[11px] text-[#5B6B7C]">
-                    Exact municipal hierarchy for correct ward engineer dispatch.
-                  </p>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={handleShareGps}
-                  disabled={locatingGps}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#CBD3DD] bg-[#F5F7FA] text-xs font-semibold text-[#1F4FE0] hover:bg-[#EAF0FF] transition-colors cursor-pointer"
-                >
-                  <LocateFixed className="w-3.5 h-3.5" />
-                  <span>{locatingGps ? 'Locating...' : 'Share Live GPS'}</span>
-                </button>
+              <div>
+                <h3 className="text-xs font-bold text-[#0F1B2A] uppercase tracking-wider">
+                  3. Indian Administrative Location & PIN Code
+                </h3>
+                <p className="text-[11px] text-[#5B6B7C]">
+                  Exact municipal hierarchy with India Post postal verification for correct ward engineer dispatch.
+                </p>
               </div>
 
-              {/* Coordinates Readout */}
-              <div className="flex items-center gap-2 rounded-xl border border-[#E3E8EE] bg-[#F5F7FA] px-3.5 py-2 text-xs cp-mono text-[#44546A]">
-                <MapPin className="w-4 h-4 text-[#1F4FE0] shrink-0" />
-                <span>
-                  {activeCoordinates.lat.toFixed(4)}° N, {activeCoordinates.lng.toFixed(4)}° E • Accuracy ±
-                  {liveGps ? `${liveGps.accuracy.toFixed(1)}m` : '4.5m'} (Municipal Geo-Tag)
-                </span>
-              </div>
-
-              {/* Cascading Indian Location Inputs */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3.5">
-                <div>
-                  <label className="block text-xs font-bold text-[#0F1B2A] mb-1">State / UT</label>
-                  <select
-                    value={stateVal}
-                    onChange={(e) => setStateVal(e.target.value)}
-                    className="w-full rounded-xl border border-[#CBD3DD] px-3 py-2 text-xs font-medium text-[#0F1B2A] bg-white focus:border-[#1F4FE0] focus:outline-none"
-                  >
-                    <option value="Punjab">Punjab</option>
-                    <option value="Delhi">Delhi NCR</option>
-                    <option value="Maharashtra">Maharashtra</option>
-                    <option value="Karnataka">Karnataka</option>
-                    <option value="Telangana">Telangana</option>
-                    <option value="Tamil Nadu">Tamil Nadu</option>
-                    <option value="Gujarat">Gujarat</option>
-                    <option value="Uttar Pradesh">Uttar Pradesh</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-[#0F1B2A] mb-1">District</label>
-                  <select
-                    value={districtVal}
-                    onChange={(e) => setDistrictVal(e.target.value)}
-                    className="w-full rounded-xl border border-[#CBD3DD] px-3 py-2 text-xs font-medium text-[#0F1B2A] bg-white focus:border-[#1F4FE0] focus:outline-none"
-                  >
-                    <option value="Ludhiana">Ludhiana</option>
-                    <option value="Amritsar">Amritsar</option>
-                    <option value="Jalandhar">Jalandhar</option>
-                    <option value="SAS Nagar">SAS Nagar (Mohali)</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-[#0F1B2A] mb-1">City / Corporation</label>
-                  <input
-                    type="text"
-                    value={cityVal}
-                    onChange={(e) => setCityVal(e.target.value)}
-                    className="w-full rounded-xl border border-[#CBD3DD] px-3 py-2 text-xs text-[#0F1B2A] bg-white focus:border-[#1F4FE0] focus:outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-[#0F1B2A] mb-1">Ward / Locality</label>
-                  <select
-                    value={selectedWard}
-                    onChange={(e) => handleWardChange(e.target.value)}
-                    className="w-full rounded-xl border border-[#CBD3DD] px-3 py-2 text-xs font-medium text-[#0F1B2A] bg-white focus:border-[#1F4FE0] focus:outline-none"
-                  >
-                    <option value="Model Town">Model Town (Ward 34)</option>
-                    <option value="Sarabha Nagar">Sarabha Nagar (Ward 21)</option>
-                    <option value="Dugri">Dugri (Ward 48)</option>
-                    <option value="Gill Road">Gill Road (Ward 12)</option>
-                    <option value="Focal Point">Focal Point (Ward 07)</option>
-                    <option value="Civil Lines">Civil Lines (Ward 19)</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-[#0F1B2A] mb-1">PIN Code (6 digits)</label>
-                  <input
-                    type="text"
-                    maxLength={6}
-                    value={pincode}
-                    onChange={(e) => setPincode(e.target.value.replace(/\D/g, ''))}
-                    placeholder="141002"
-                    className="w-full rounded-xl border border-[#CBD3DD] px-3 py-2 text-xs cp-mono tabular-nums text-[#0F1B2A] bg-white focus:border-[#1F4FE0] focus:outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-[#0F1B2A] mb-1">Nearby Landmark</label>
-                  <input
-                    type="text"
-                    value={landmark}
-                    onChange={(e) => setLandmark(e.target.value)}
-                    placeholder="Near Gol Market Chowk, opp SBI"
-                    className="w-full rounded-xl border border-[#CBD3DD] px-3 py-2 text-xs text-[#0F1B2A] bg-white focus:border-[#1F4FE0] focus:outline-none"
-                  />
-                </div>
-              </div>
+              <IndianLocationSelector
+                value={location}
+                onChange={setLocation}
+                showLiveGps={true}
+                showLandmark={true}
+              />
             </div>
 
             {/* SECTION 4: CONTACT NUMBER & SEVERITY CONTEXT */}
@@ -1074,6 +947,36 @@ export const CitizenPortal: React.FC<CitizenPortalProps> = ({
                 </div>
               </div>
 
+              {/* Target Municipal Dispatch Zone */}
+              <div className="pt-2 border-t border-[#E3E8EE] space-y-1.5 text-xs">
+                <span className="text-[#7A8999] uppercase tracking-wider text-[10px] font-bold block">
+                  Target Municipal Dispatch Zone
+                </span>
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <p className="font-bold text-[#0F1B2A]">
+                      {location.ward || 'Local Ward'}, {location.district}
+                    </p>
+                    <p className="text-[11px] text-[#5B6B7C]">
+                      {location.state} • PIN: <span className="cp-mono font-semibold text-[#0F1B2A]">{location.pincode || 'Auto'}</span>
+                    </p>
+                  </div>
+                  <span className="text-[10px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded">
+                    Zone Verified
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5 pt-0.5 text-[10px] text-[#7A8999] cp-mono">
+                  <MapPin className="w-3 h-3 text-[#1F4FE0] shrink-0" />
+                  <span>
+                    {location.lat !== undefined && location.lng !== undefined
+                      ? `${Math.abs(location.lat).toFixed(4)}° ${location.lat >= 0 ? 'N' : 'S'}, ${Math.abs(
+                          location.lng
+                        ).toFixed(4)}° ${location.lng >= 0 ? 'E' : 'W'}`
+                      : '30.9025° N, 75.8589° E'}
+                  </span>
+                </div>
+              </div>
+
               {/* 100m Spatial Duplicate Check Alert */}
               {existingDuplicate && (
                 <div className="rounded-xl border border-amber-300 bg-white p-3.5 space-y-2 text-xs">
@@ -1082,7 +985,7 @@ export const CitizenPortal: React.FC<CitizenPortalProps> = ({
                     <span>Existing Duplicate Within 100m</span>
                   </div>
                   <p className="text-[11px] text-[#44546A] leading-relaxed">
-                    Ticket <strong className="cp-mono">{existingDuplicate.id}</strong> ({existingDuplicate.category}) was already logged in {selectedWard}.
+                    Ticket <strong className="cp-mono">{existingDuplicate.id}</strong> ({existingDuplicate.category}) was already logged in {location.ward || 'this sector'}.
                   </p>
                   <button
                     type="button"

@@ -1,4 +1,4 @@
-import type { CivicCategory, Department, PriorityTier, TicketStage, AuditLogEntry, CivicComplaint } from '../types/civic';
+import type { CivicComplaint } from '../types/civic';
 
 /**
  * Mock Complaint Dataset for CityPulse AI - Ludhiana
