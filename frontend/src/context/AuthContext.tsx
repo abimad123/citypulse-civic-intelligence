@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import type { AuthUser, UserRole } from '../types/auth';
+import type { AuthUser, UserRole, CitizenPreferences } from '../types/auth';
 
 export const DEMO_ACCOUNTS: Record<UserRole, AuthUser> = {
   citizen: {
@@ -9,6 +9,21 @@ export const DEMO_ACCOUNTS: Record<UserRole, AuthUser> = {
     role: 'citizen',
     badgeId: 'CIT-1042',
     ward: 'Model Town',
+    phone: '9876543210',
+    preferences: {
+      phone: '9876543210',
+      allowCallVerification: true,
+      preferredLanguage: 'English',
+      state: 'Punjab',
+      district: 'Ludhiana',
+      city: 'Ludhiana Municipal Corporation',
+      ward: 'Model Town',
+      pincode: '141002',
+      landmark: 'Near Gol Market Chowk, opposite SBI branch',
+      autoStripMetadata: true,
+      smsWhatsappAlerts: true,
+      anonymousLeaderboard: false,
+    },
   },
   authority: {
     id: 'usr-auth-08',
@@ -18,6 +33,7 @@ export const DEMO_ACCOUNTS: Record<UserRole, AuthUser> = {
     badgeId: 'MC-OFF-08',
     department: 'Roads & Public Works',
     ward: 'All Wards',
+    phone: '9814012345',
   },
   worker: {
     id: 'usr-wrk-04',
@@ -27,6 +43,7 @@ export const DEMO_ACCOUNTS: Record<UserRole, AuthUser> = {
     badgeId: 'CREW-RD-04',
     department: 'Roads & Public Works • Crew #4',
     ward: 'Model Town & Sarabha Nagar',
+    phone: '9815098765',
   },
 };
 
@@ -35,6 +52,7 @@ interface AuthContextType {
   login: (email: string, role?: UserRole) => boolean;
   loginAsDemo: (role: UserRole) => void;
   registerCitizen: (name: string, email: string, ward?: string) => void;
+  updateUserPreferences: (prefs: Partial<CitizenPreferences>, extraInfo?: Partial<AuthUser>) => void;
   logout: () => void;
   canAccessPortal: (portalId: string) => boolean;
 }
@@ -97,6 +115,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       badgeId: detectedRole === 'authority' ? 'MC-OFF-99' : detectedRole === 'worker' ? 'CREW-09' : 'CIT-9901',
       ward: 'Model Town',
       department: detectedRole === 'authority' ? 'Municipal Administration' : detectedRole === 'worker' ? 'Field Operations' : undefined,
+      phone: '9876543210',
+      preferences: {
+        phone: '9876543210',
+        allowCallVerification: true,
+        preferredLanguage: 'English',
+        state: 'Punjab',
+        district: 'Ludhiana',
+        city: 'Ludhiana Municipal Corporation',
+        ward: 'Model Town',
+        pincode: '141002',
+        landmark: '',
+        autoStripMetadata: true,
+        smsWhatsappAlerts: true,
+        anonymousLeaderboard: false,
+      },
     };
     setUser(newUser);
     return true;
@@ -109,9 +142,37 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       email: email.trim(),
       role: 'citizen',
       badgeId: `CIT-${Math.floor(1000 + Math.random() * 9000)}`,
-      ward: ward || 'Auto-Detected (GPS)',
+      ward: ward || 'Model Town',
+      phone: '9876500000',
+      preferences: {
+        phone: '9876500000',
+        allowCallVerification: true,
+        preferredLanguage: 'English',
+        state: 'Punjab',
+        district: 'Ludhiana',
+        city: 'Ludhiana Municipal Corporation',
+        ward: ward || 'Model Town',
+        pincode: '141002',
+        autoStripMetadata: true,
+        smsWhatsappAlerts: true,
+        anonymousLeaderboard: false,
+      },
     };
     setUser(newUser);
+  };
+
+  const updateUserPreferences = (prefs: Partial<CitizenPreferences>, extraInfo?: Partial<AuthUser>) => {
+    setUser((prev) => {
+      if (!prev) return null;
+      return {
+        ...prev,
+        ...extraInfo,
+        preferences: {
+          ...(prev.preferences || {}),
+          ...prefs,
+        },
+      };
+    });
   };
 
   const logout = () => {
@@ -134,6 +195,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         login,
         loginAsDemo,
         registerCitizen,
+        updateUserPreferences,
         logout,
         canAccessPortal,
       }}
