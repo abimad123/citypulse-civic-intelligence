@@ -1,11 +1,37 @@
 import React, { useState } from 'react';
 import { BrowserRouter, Routes, Route, useNavigate, useParams, Navigate } from 'react-router-dom';
+import { ShieldAlert, ArrowLeft, KeyRound, ArrowRight } from 'lucide-react';
 import { MOCK_COMPLAINTS } from './data/mockComplaints';
 import { AppShell, type TabKey } from './components/layout/AppShell';
 import { HomeLanding, type PortalKey } from './pages/HomeLanding';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { AuthModal } from './components/auth/AuthModal';
 import type { CivicComplaint } from './types/civic';
+import { ROLE_LABELS, type UserRole } from './types/auth';
+
+// Helper for portal descriptive names and role requirements
+const PORTAL_META: Record<TabKey, { name: string; requiredRole: string; description: string }> = {
+  authority: {
+    name: 'Authority Command Center',
+    requiredRole: 'Municipal Authority (Commissioners & Department Heads)',
+    description: 'Human-in-the-Loop AI triage queue, confidence scoring inspection, and SLA oversight.',
+  },
+  map: {
+    name: 'GIS Hotspot & Predictive Map',
+    requiredRole: 'Municipal Authority / Urban Analyst',
+    description: 'Spatial density clustering, DBSCAN hotspot analysis, and 7-day predictive maintenance forecasts.',
+  },
+  worker: {
+    name: 'Field Worker Mobile Queue',
+    requiredRole: 'Field Repair Crew',
+    description: 'Work order dispatch, route guidance, and before/after photo verification.',
+  },
+  citizen: {
+    name: 'Citizen Incident Portal',
+    requiredRole: 'Citizen Reporter or Municipal Officer',
+    description: 'Civic issue filing with automated YOLOv11 defect detection and progress tracking.',
+  },
+};
 
 // Protected Portal View Wrapper
 interface PortalViewProps {
@@ -23,34 +49,81 @@ const PortalView: React.FC<PortalViewProps> = ({ complaints }) => {
     ? (portalId as TabKey)
     : 'authority';
 
+  const portalInfo = PORTAL_META[activeTab] || PORTAL_META.authority;
+
   // If user is not authenticated or lacks permission, show guard dialog / prompt
   if (!user || !canAccessPortal(activeTab)) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-[#F5F7FA] p-6 text-center">
-        <div className="max-w-md w-full bg-white border border-[#DDE3EA] rounded-xl p-8 shadow-sm space-y-4">
-          <div className="flex h-12 w-12 mx-auto items-center justify-center rounded-full bg-[#EAF0FF] text-2xl text-[#1F4FE0]">
-            🔒
-          </div>
-          <h2 className="text-xl font-bold text-[#0F1B2A]">Authentication Required</h2>
-          <p className="text-sm text-[#44546A] leading-relaxed">
-            {!user
-              ? `You need to sign in to access the ${activeTab} workspace.`
-              : `Your current role (${user.role}) is not authorized to access this department portal.`}
-          </p>
+    const isRoleMismatch = !!user && !canAccessPortal(activeTab);
 
-          <div className="pt-2 flex flex-col gap-2">
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-[#F8FAFC] p-6 text-left selection:bg-[#1F4FE0] selection:text-white">
+        <div className="max-w-[480px] w-full bg-white border border-[#DDE3EA] rounded-2xl p-7 sm:p-8 shadow-[0_4px_24px_rgba(15,27,42,0.06)] space-y-6">
+          {/* Top Status Header */}
+          <div className="flex items-start gap-4">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-amber-50 border border-amber-200/80 text-amber-700">
+              <ShieldAlert className="w-5 h-5" />
+            </div>
+            <div className="space-y-1">
+              <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-semibold uppercase tracking-wider bg-amber-100/70 text-amber-800 border border-amber-200">
+                Restricted Municipal Portal
+              </div>
+              <h2 className="text-xl font-bold tracking-tight text-[#0F1B2A]">
+                {isRoleMismatch ? 'Access Level Insufficient' : 'Authentication Required'}
+              </h2>
+            </div>
+          </div>
+
+          {/* Context Notice Box */}
+          <div className="rounded-xl border border-[#E3E8EE] bg-[#F5F7FA] p-4 space-y-2.5 text-xs text-[#44546A] leading-relaxed">
+            <div className="flex items-center justify-between pb-2 border-b border-[#E3E8EE]">
+              <span className="font-semibold text-[#0F1B2A]">Target Workspace:</span>
+              <span className="font-semibold text-[#1F4FE0]">{portalInfo.name}</span>
+            </div>
+
+            <p>
+              {isRoleMismatch ? (
+                <>
+                  You are signed in as{' '}
+                  <strong className="text-[#0F1B2A]">
+                    {user?.name} ({ROLE_LABELS[user?.role as UserRole] || user?.role})
+                  </strong>
+                  . This workspace requires <strong className="text-[#0F1B2A]">{portalInfo.requiredRole}</strong> credentials.
+                </>
+              ) : (
+                <>
+                  This municipal workspace is restricted. Please sign in with appropriate authority credentials to access live triage and operational records.
+                </>
+              )}
+            </p>
+
+            <p className="text-[11px] text-[#7A8999]">
+              {portalInfo.description}
+            </p>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="space-y-2.5 pt-1">
             <button
               onClick={() => setAuthModalOpen(true)}
-              className="w-full rounded-lg bg-[#1F4FE0] py-2.5 text-sm font-semibold text-white hover:bg-[#1840B8] transition-colors"
+              className="w-full flex items-center justify-center gap-2 rounded-xl bg-[#1F4FE0] py-3 text-sm font-semibold text-white hover:bg-[#1840B8] active:bg-[#14338F] transition-colors cursor-pointer shadow-sm shadow-[#1F4FE0]/25"
             >
-              {!user ? 'Sign in with Demo Account' : 'Switch Account / Role'}
+              <KeyRound className="w-4 h-4" />
+              <span>{isRoleMismatch ? 'Switch Account / Demo Role' : 'Sign In with Authorized Account'}</span>
             </button>
+
             <button
               onClick={() => navigate('/')}
-              className="w-full rounded-lg border border-[#CBD3DD] bg-white py-2.5 text-sm font-semibold text-[#0F1B2A] hover:bg-[#F5F7FA] transition-colors"
+              className="w-full flex items-center justify-center gap-2 rounded-xl border border-[#CBD3DD] bg-white py-2.5 text-sm font-semibold text-[#0F1B2A] hover:bg-[#F5F7FA] hover:border-[#0F1B2A] transition-colors cursor-pointer"
             >
-              Return to Home
+              <ArrowLeft className="w-4 h-4 text-[#5B6B7C]" />
+              <span>Return to Home</span>
             </button>
+          </div>
+
+          {/* Bottom Security Assurance */}
+          <div className="pt-2 border-t border-[#E3E8EE] flex items-center justify-between text-[11px] text-[#7A8999]">
+            <span>DPDP Act 2023 Compliant</span>
+            <span className="font-mono">#AUTH-GUARD</span>
           </div>
         </div>
 
